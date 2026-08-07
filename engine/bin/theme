@@ -19,6 +19,10 @@ source "$ENGINE_DIR/commands/doctor.sh"
 source "$ENGINE_DIR/services/wallpaper.sh"
 source "$ENGINE_DIR/commands/wallpaper.sh"
 
+source "$ENGINE_DIR/services/color_engine.sh"
+source "$ENGINE_DIR/commands/palette.sh"
+
+
 readonly VERSION="0.1.0"
 
 show_banner() {
@@ -51,6 +55,11 @@ main() {
         wallpaper)
              shift
              command_wallpaper "$@"
+            ;;
+	palette)
+
+             shift
+             command_palette "$@"
             ;;
 
         *)
