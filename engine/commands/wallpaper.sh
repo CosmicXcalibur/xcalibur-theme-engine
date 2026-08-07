@@ -9,26 +9,27 @@ command_wallpaper() {
             ;;
 
         current)
-            service_wallpaper_current
+            wallpaper_current
             ;;
 
         list)
-            service_wallpaper_list
+            wallpaper_list
             ;;
 
         random)
-            service_wallpaper_random
+            wallpaper_random
             ;;
 
         set)
             shift
-            service_wallpaper_set "$@"
+            wallpaper_set "$@"
             ;;
 
         *)
             wallpaper_help
             ;;
     esac
+
 }
 
 wallpaper_help() {
@@ -37,10 +38,20 @@ cat <<EOF
 
 Wallpaper Commands
 
-theme wallpaper current
-theme wallpaper list
-theme wallpaper random
-theme wallpaper set <file>
+Usage:
+    theme wallpaper <command>
+
+Commands:
+    list                List all wallpapers
+    current             Show current wallpaper
+    random              Set a random wallpaper
+    set <file>          Set a wallpaper
+
+Examples:
+    theme wallpaper list
+    theme wallpaper current
+    theme wallpaper random
+    theme wallpaper set wallpaper.jpg
 
 EOF
 
