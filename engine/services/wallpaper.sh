@@ -104,10 +104,16 @@ wallpaper_set() {
 
     wallpaper_reload "$fullpath"
 
+    theme_apply
+
     log_success "Wallpaper updated."
+
 }
 
+
+
 wallpaper_random() {
+
 
     local wallpaper
 

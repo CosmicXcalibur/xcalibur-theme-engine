@@ -15,6 +15,7 @@ source "$ENGINE_DIR/commands/help.sh"
 source "$ENGINE_DIR/commands/version.sh"
 source "$ENGINE_DIR/commands/status.sh"
 source "$ENGINE_DIR/commands/doctor.sh"
+source "$ENGINE_DIR/services/apply.sh"
 source "$ENGINE_DIR/commands/render.sh"
 
 source "$ENGINE_DIR/services/wallpaper.sh"
@@ -23,7 +24,9 @@ source "$ENGINE_DIR/renderer/template.sh"
 
 source "$ENGINE_DIR/services/color_engine.sh"
 source "$ENGINE_DIR/commands/palette.sh"
-
+source "$ENGINE_DIR/services/apply.sh"
+source "$MODULES_DIR/kitty/install.sh"
+source "$MODULES_DIR/kitty/reload.sh"
 
 readonly VERSION="0.1.0"
 
