@@ -5,37 +5,71 @@ set -Eeuo pipefail
 BIN_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ENGINE_DIR="$(dirname "$BIN_DIR")"
 
-source "$ENGINE_DIR/lib/common.sh"
+# ==========================================================
+# Libraries
+# ==========================================================
 
+source "$ENGINE_DIR/lib/common.sh"
 source "$ENGINE_DIR/lib/config.sh"
 
 load_config
+
+readonly VERSION="0.1.0"
+
+# ==========================================================
+# Core Services
+# ==========================================================
+
+source "$ENGINE_DIR/services/wallpaper.sh"
+source "$ENGINE_DIR/services/color_engine.sh"
+
+# ==========================================================
+# Renderer
+# ==========================================================
+
+source "$ENGINE_DIR/renderer/template.sh"
+
+# ==========================================================
+# Modules
+# ==========================================================
+
+# Kitty
+source "$MODULES_DIR/kitty/module.sh"
+source "$MODULES_DIR/kitty/install.sh"
+source "$MODULES_DIR/kitty/reload.sh"
+
+# Waybar
+source "$MODULES_DIR/waybar/module.sh"
+source "$MODULES_DIR/waybar/install.sh"
+source "$MODULES_DIR/waybar/reload.sh"
+
+# ==========================================================
+# Commands
+# ==========================================================
 
 source "$ENGINE_DIR/commands/help.sh"
 source "$ENGINE_DIR/commands/version.sh"
 source "$ENGINE_DIR/commands/status.sh"
 source "$ENGINE_DIR/commands/doctor.sh"
-source "$ENGINE_DIR/services/apply.sh"
+
 source "$ENGINE_DIR/commands/render.sh"
-
-source "$ENGINE_DIR/services/wallpaper.sh"
 source "$ENGINE_DIR/commands/wallpaper.sh"
-source "$ENGINE_DIR/renderer/template.sh"
-
-source "$ENGINE_DIR/services/color_engine.sh"
 source "$ENGINE_DIR/commands/palette.sh"
-source "$ENGINE_DIR/services/apply.sh"
-source "$MODULES_DIR/kitty/install.sh"
-source "$MODULES_DIR/kitty/reload.sh"
 
-readonly VERSION="0.1.0"
+# ==========================================================
+# Theme Pipeline
+# ==========================================================
+
+source "$ENGINE_DIR/services/apply.sh"
 
 show_banner() {
+
     echo
     echo "========================================"
     echo "        Theme Engine v${VERSION}"
     echo "========================================"
     echo
+
 }
 
 main() {
@@ -57,28 +91,31 @@ main() {
         doctor)
             command_doctor
             ;;
+
         wallpaper)
-             shift
-             command_wallpaper "$@"
+            shift
+            command_wallpaper "$@"
             ;;
-	palette)
 
-             shift
-             command_palette "$@"
+        palette)
+            shift
+            command_palette "$@"
             ;;
-	render)
 
-             shift
-             command_render "$@"
-        ;;
+        render)
+            shift
+            command_render "$@"
+            ;;
 
         *)
-            log_error "Unknown command: $1"
+            log_error "Unknown command: ${1:-}"
             echo
             command_help
             exit 1
             ;;
+
     esac
+
 }
 
 main "$@"

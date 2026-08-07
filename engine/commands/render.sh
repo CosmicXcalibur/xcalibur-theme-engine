@@ -2,20 +2,36 @@
 
 command_render() {
 
-    case "${1:-help}" in
+    local module="$1"
+
+    if [[ -z "$module" ]]; then
+        echo "Usage:"
+        echo "    theme render <module>"
+        return 1
+    fi
+
+    case "$module" in
 
         kitty)
 
-            render_template \
-                "$MODULES_DIR/kitty/templates/kitty.conf.template" \
-                "$GENERATED_DIR/kitty.conf"
+            kitty_render
+            ;;
+
+        waybar)
+
+            waybar_render
             ;;
 
         *)
 
-            echo "Usage:"
-            echo "    theme render kitty"
+            log_error "Unknown module: $module"
+            echo
+            echo "Available modules:"
+            echo "    kitty"
+            echo "    waybar"
+            return 1
             ;;
+
     esac
 
 }

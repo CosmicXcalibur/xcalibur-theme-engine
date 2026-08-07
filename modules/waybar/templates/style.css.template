@@ -1,0 +1,29 @@
+* {
+    font-family: "JetBrainsMono Nerd Font";
+}
+
+window#waybar {
+    background: {{BACKGROUND}};
+    color: {{FOREGROUND}};
+}
+
+#workspaces button.active {
+    background: {{PRIMARY}};
+    color: {{BACKGROUND}};
+}
+
+#clock {
+    color: {{ACCENT}};
+}
+
+#battery {
+    color: {{SUCCESS}};
+}
+
+#network {
+    color: {{PRIMARY}};
+}
+
+#pulseaudio {
+    color: {{SECONDARY}};
+}

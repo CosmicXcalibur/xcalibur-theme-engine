@@ -11,14 +11,9 @@ theme_apply() {
     # Generate runtime palette
     color_generate
 
-    # Render Kitty configuration
-    command_render kitty
-
-    # Install generated configuration
-    kitty_install
-
-    # Reload Kitty with new colors
-    kitty_reload
+    # Apply modules
+    kitty_apply
+    waybar_apply
 
     log_success "Theme applied."
 
