@@ -1,0 +1,18 @@
+# Runtime artifacts
+runtime/
+
+# Logs
+*.log
+
+# Temporary files
+*.tmp
+*.swp
+*.swo
+*~
+
+# Editors
+.vscode/
+.idea/
+
+# macOS
+.DS_Store

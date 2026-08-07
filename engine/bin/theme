@@ -1,0 +1,58 @@
+#!/usr/bin/env bash
+
+set -Eeuo pipefail
+
+BIN_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ENGINE_DIR="$(dirname "$BIN_DIR")"
+
+source "$ENGINE_DIR/lib/common.sh"
+
+source "$ENGINE_DIR/lib/config.sh"
+
+load_config
+
+source "$ENGINE_DIR/commands/help.sh"
+source "$ENGINE_DIR/commands/version.sh"
+source "$ENGINE_DIR/commands/status.sh"
+source "$ENGINE_DIR/commands/doctor.sh"
+
+readonly VERSION="0.1.0"
+
+show_banner() {
+    echo
+    echo "========================================"
+    echo "        Theme Engine v${VERSION}"
+    echo "========================================"
+    echo
+}
+
+main() {
+
+    case "${1:-help}" in
+
+        help|-h|--help)
+            command_help
+            ;;
+
+        version|-v|--version)
+            command_version
+            ;;
+
+        status)
+            command_status
+            ;;
+
+        doctor)
+            command_doctor
+            ;;
+
+        *)
+            log_error "Unknown command: $1"
+            echo
+            command_help
+            exit 1
+            ;;
+    esac
+}
+
+main "$@"
