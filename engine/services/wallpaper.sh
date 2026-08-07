@@ -23,14 +23,22 @@ wallpaper_list() {
         \) | sort
 }
 
+
 wallpaper_current() {
 
-    if [[ -f "$STATE_DIR/current_wallpaper" ]]; then
-        cat "$STATE_DIR/current_wallpaper"
-    else
-        log_warn "No wallpaper has been selected yet."
+    if [[ ! -f "$STATE_DIR/current_wallpaper" ]]; then
+        log_warn "No wallpaper selected."
+        return 1
     fi
+
+    echo
+    log_info "Current Wallpaper"
+    echo
+
+    cat "$STATE_DIR/current_wallpaper"
+
 }
+
 
 wallpaper_random() {
 
