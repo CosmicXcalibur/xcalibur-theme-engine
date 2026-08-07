@@ -42,9 +42,30 @@ wallpaper_current() {
 
 wallpaper_random() {
 
-    log_warn "Not implemented yet."
+    local wallpaper
+
+    wallpaper=$(
+        find "$WALLPAPER_DIR" \
+            -maxdepth 1 \
+            -type f \
+            \( \
+                -iname "*.png" \
+                -o -iname "*.jpg" \
+                -o -iname "*.jpeg" \
+                -o -iname "*.webp" \
+            \) \
+            | shuf -n 1
+    )
+
+    if [[ -z "$wallpaper" ]]; then
+        log_error "No wallpapers found."
+        return 1
+    fi
+
+    wallpaper_set "$(basename "$wallpaper")"
 
 }
+
 
 wallpaper_set() {
 
