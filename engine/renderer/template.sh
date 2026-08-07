@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 # ==========================================================
-# Xcalibur Template Renderer
+# Xcalibur Generic Template Renderer
 # ==========================================================
 
 render_template() {
@@ -13,24 +13,20 @@ render_template() {
 
     cp "$template" "$output"
 
-    sed -i "s|{{BACKGROUND}}|$BACKGROUND|g" "$output"
-    sed -i "s|{{FOREGROUND}}|$FOREGROUND|g" "$output"
-    sed -i "s|{{CURSOR}}|$CURSOR|g" "$output"
+    while IFS='=' read -r key value; do
 
-    sed -i "s|{{PRIMARY}}|$PRIMARY|g" "$output"
-    sed -i "s|{{SECONDARY}}|$SECONDARY|g" "$output"
-    sed -i "s|{{ACCENT}}|$ACCENT|g" "$output"
+        [[ "$key" =~ ^#.*$ ]] && continue
+        [[ -z "$key" ]] && continue
 
-    sed -i "s|{{SUCCESS}}|$SUCCESS|g" "$output"
-    sed -i "s|{{WARNING}}|$WARNING|g" "$output"
-    sed -i "s|{{ERROR}}|$ERROR|g" "$output"
+        value="${value%\"}"
+        value="${value#\"}"
 
-    for i in {0..15}; do
+        sed -i "s|{{$key}}|$value|g" "$output"
 
-        eval color="\$COLOR$i"
+    done < <(
 
-        sed -i "s|{{COLOR$i}}|$color|g" "$output"
+        grep '=' "$GENERATED_DIR/colors.sh"
 
-    done
+    )
 
-}	
+}
