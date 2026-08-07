@@ -48,6 +48,46 @@ wallpaper_random() {
 
 wallpaper_set() {
 
-    log_warn "Not implemented yet."
+    local wallpaper="$1"
+
+    if [[ -z "$wallpaper" ]]; then
+        log_error "No wallpaper specified."
+        echo
+        echo "Usage:"
+        echo "    theme wallpaper set <wallpaper>"
+        return 1
+    fi
+
+    local fullpath="$WALLPAPER_DIR/$wallpaper"
+
+    if [[ ! -f "$fullpath" ]]; then
+        log_error "Wallpaper not found:"
+        echo "    $wallpaper"
+        return 1
+    fi
+
+    echo "$fullpath" > "$STATE_DIR/current_wallpaper"
+
+    wallpaper_reload "$fullpath"
+
+    log_success "Wallpaper updated."
+
+}
+
+
+wallpaper_reload() {
+
+    local wallpaper="$1"
+
+    local monitor
+
+    monitor=$(hyprctl monitors | awk '/Monitor/ {print $2; exit}')
+
+    if [[ -z "$monitor" ]]; then
+        log_error "Unable to detect monitor."
+        return 1
+    fi
+
+    hyprctl hyprpaper wallpaper "$monitor,$wallpaper,cover"
 
 }
