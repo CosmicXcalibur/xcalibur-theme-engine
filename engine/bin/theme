@@ -11,6 +11,7 @@ ENGINE_DIR="$(dirname "$BIN_DIR")"
 
 source "$ENGINE_DIR/lib/common.sh"
 source "$ENGINE_DIR/lib/config.sh"
+source "$ENGINE_DIR/lib/modules.sh"
 
 load_config
 
@@ -33,15 +34,7 @@ source "$ENGINE_DIR/renderer/template.sh"
 # Modules
 # ==========================================================
 
-# Kitty
-source "$MODULES_DIR/kitty/module.sh"
-source "$MODULES_DIR/kitty/install.sh"
-source "$MODULES_DIR/kitty/reload.sh"
-
-# Waybar
-source "$MODULES_DIR/waybar/module.sh"
-source "$MODULES_DIR/waybar/install.sh"
-source "$MODULES_DIR/waybar/reload.sh"
+load_modules
 
 # ==========================================================
 # Commands

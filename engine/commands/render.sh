@@ -1,5 +1,9 @@
 #!/usr/bin/env bash
 
+# ==========================================================
+# Theme Render Command
+# ==========================================================
+
 command_render() {
 
     local module="$1"
@@ -10,28 +14,16 @@ command_render() {
         return 1
     fi
 
-    case "$module" in
+    local fn="${module}_render"
 
-        kitty)
-
-            kitty_render
-            ;;
-
-        waybar)
-
-            waybar_render
-            ;;
-
-        *)
-
-            log_error "Unknown module: $module"
-            echo
-            echo "Available modules:"
-            echo "    kitty"
-            echo "    waybar"
-            return 1
-            ;;
-
-    esac
+    if declare -F "$fn" >/dev/null; then
+        "$fn"
+    else
+        log_error "Unknown module: $module"
+        echo
+        echo "No render function found:"
+        echo "    $fn"
+        return 1
+    fi
 
 }
