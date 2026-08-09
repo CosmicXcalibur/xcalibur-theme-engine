@@ -29,13 +29,11 @@ color_generate() {
     color_export
 
     log_success "Palette generated."
-
 }
 
 # ----------------------------------------------------------
 # Export runtime palette
 # ----------------------------------------------------------
-
 
 color_export() {
 
@@ -61,9 +59,17 @@ color_export() {
 
 WALLPAPER="$wallpaper"
 
+# ----------------------------------------------------------
+# Base colors
+# ----------------------------------------------------------
+
 BACKGROUND="$background"
 FOREGROUND="$foreground"
 CURSOR="$cursor"
+
+# ----------------------------------------------------------
+# Raw CWAL ANSI palette
+# ----------------------------------------------------------
 
 COLOR0="$color0"
 COLOR1="$color1"
@@ -82,6 +88,13 @@ COLOR13="$color13"
 COLOR14="$color14"
 COLOR15="$color15"
 
+# ----------------------------------------------------------
+# Semantic theme palette
+#
+# Application modules should use these semantic roles
+# instead of depending directly on COLOR0-COLOR15.
+# ----------------------------------------------------------
+
 PRIMARY="$color4"
 SECONDARY="$color5"
 ACCENT="$color6"
@@ -90,8 +103,14 @@ SUCCESS="$color2"
 WARNING="$color3"
 ERROR="$color1"
 
+MUTED="$color7"
+SURFACE="$color2"
+SURFACE_ALT="$color3"
+BORDER="$color4"
+SELECTION="$color5"
+HIGHLIGHT="$color6"
+
 EOF
 
     log_success "Runtime palette updated."
-
 }
