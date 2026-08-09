@@ -1,0 +1,166 @@
+/* ==========================================================
+ * Xcalibur GTK Theme
+ * Auto-generated. Do not edit.
+ * ========================================================== */
+
+/* ----------------------------------------------------------
+ * Xcalibur semantic colors
+ * ---------------------------------------------------------- */
+
+@define-color xcal_background {{BACKGROUND}};
+@define-color xcal_foreground {{FOREGROUND}};
+@define-color xcal_muted {{MUTED}};
+
+@define-color xcal_surface {{SURFACE}};
+@define-color xcal_surface_alt {{SURFACE_ALT}};
+@define-color xcal_border {{BORDER}};
+
+@define-color xcal_primary {{PRIMARY}};
+@define-color xcal_secondary {{SECONDARY}};
+@define-color xcal_accent {{ACCENT}};
+@define-color xcal_highlight {{HIGHLIGHT}};
+@define-color xcal_selection {{SELECTION}};
+
+@define-color xcal_success {{SUCCESS}};
+@define-color xcal_warning {{WARNING}};
+@define-color xcal_error {{ERROR}};
+
+/* ----------------------------------------------------------
+ * Base application colors
+ * ---------------------------------------------------------- */
+
+window,
+dialog,
+.background {
+    background-color: @xcal_background;
+    color: @xcal_foreground;
+}
+
+/* ----------------------------------------------------------
+ * Text
+ * ---------------------------------------------------------- */
+
+label,
+entry,
+textview,
+treeview,
+.view {
+    color: @xcal_foreground;
+}
+
+/* ----------------------------------------------------------
+ * Entries
+ * ---------------------------------------------------------- */
+
+entry,
+entry:focus {
+    background-color: @xcal_surface;
+    color: @xcal_foreground;
+    border-color: @xcal_border;
+    caret-color: @xcal_accent;
+}
+
+/* ----------------------------------------------------------
+ * Buttons
+ * ---------------------------------------------------------- */
+
+button {
+    background-color: @xcal_surface;
+    color: @xcal_foreground;
+    border-color: @xcal_border;
+}
+
+button:hover {
+    background-color: @xcal_surface_alt;
+    color: @xcal_foreground;
+}
+
+button:active,
+button:checked {
+    background-color: @xcal_primary;
+    color: @xcal_background;
+}
+
+/* ----------------------------------------------------------
+ * Selection
+ * ---------------------------------------------------------- */
+
+selection,
+.view:selected,
+treeview.view:selected {
+    background-color: @xcal_selection;
+    color: @xcal_background;
+}
+
+/* ----------------------------------------------------------
+ * Links and accents
+ * ---------------------------------------------------------- */
+
+link,
+*:link {
+    color: @xcal_accent;
+}
+
+link:hover,
+*:link:hover {
+    color: @xcal_highlight;
+}
+
+/* ----------------------------------------------------------
+ * Checkboxes / radio buttons
+ * ---------------------------------------------------------- */
+
+checkbutton,
+radiobutton {
+    color: @xcal_foreground;
+}
+
+/* ----------------------------------------------------------
+ * Tooltips
+ * ---------------------------------------------------------- */
+
+tooltip {
+    background-color: @xcal_surface;
+    color: @xcal_foreground;
+    border-color: @xcal_border;
+}
+
+/* ----------------------------------------------------------
+ * Scrollbars
+ * ---------------------------------------------------------- */
+
+scrollbar {
+    background-color: @xcal_background;
+}
+
+scrollbar slider {
+    background-color: @xcal_surface_alt;
+}
+
+scrollbar slider:hover {
+    background-color: @xcal_accent;
+}
+
+/* ----------------------------------------------------------
+ * Focus
+ * ---------------------------------------------------------- */
+
+*:focus {
+    outline-color: @xcal_accent;
+}
+
+/* ----------------------------------------------------------
+ * Error / warning / success states
+ * ---------------------------------------------------------- */
+
+.error {
+    color: @xcal_error;
+}
+
+.warning {
+    color: @xcal_warning;
+}
+
+.success {
+    color: @xcal_success;
+}
