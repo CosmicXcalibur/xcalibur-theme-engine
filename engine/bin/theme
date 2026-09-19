@@ -43,6 +43,7 @@ load_modules
 source "$ENGINE_DIR/commands/help.sh"
 source "$ENGINE_DIR/commands/version.sh"
 source "$ENGINE_DIR/commands/status.sh"
+source "$ENGINE_DIR/commands/theme.sh"
 source "$ENGINE_DIR/commands/doctor.sh"
 
 source "$ENGINE_DIR/commands/render.sh"
@@ -79,6 +80,10 @@ main() {
 
         status)
             command_status
+            ;;
+
+        list|install|set|remove|current)
+            command_theme "$@"
             ;;
 
         doctor)
