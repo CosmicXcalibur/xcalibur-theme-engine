@@ -14,13 +14,78 @@ command_theme() {
         current)
             theme_current
             ;;
+        set)
+            theme_set "$@"
+            ;;
         *)
             echo "Usage:"
             echo "    theme list"
             echo "    theme current"
+            echo "    theme set <theme-id>"
             return 1
             ;;
     esac
+}
+
+theme_set() {
+    if [[ "$#" -ne 2 ]]; then
+        log_error "Usage: theme set <theme-id>"
+        return 1
+    fi
+
+    local theme_id="$2"
+    local theme_dir="$THEMES_DIR/$theme_id"
+    local previous_theme_id=""
+    local had_previous_theme=false
+
+    if ! theme_id_validate "$theme_id"; then
+        log_error "Invalid theme ID: $theme_id"
+        return 1
+    fi
+
+    if ! theme_manifest_load "$theme_dir/theme.conf" "$theme_id"; then
+        log_error "Theme '$theme_id' is invalid: $THEME_MANIFEST_ERROR"
+        return 1
+    fi
+
+    if ! theme_definition_load "$theme_dir/palette.conf" "$theme_id"; then
+        log_error "Theme '$theme_id' is invalid: $THEME_DEFINITION_ERROR"
+        return 1
+    fi
+
+    if ! mkdir -p "$STATE_DIR"; then
+        log_error "Unable to create state directory: $STATE_DIR"
+        return 1
+    fi
+
+    if [[ -f "$CURRENT_THEME_FILE" ]]; then
+        previous_theme_id="$(< "$CURRENT_THEME_FILE")"
+        had_previous_theme=true
+    fi
+
+    if ! printf '%s\n' "$theme_id" > "$CURRENT_THEME_FILE"; then
+        log_error "Unable to write current theme state."
+        return 1
+    fi
+
+    log_success "Theme selected: $theme_id"
+
+    if ! color_generate; then
+        if [[ "$had_previous_theme" == true ]]; then
+            if ! printf '%s\n' "$previous_theme_id" > "$CURRENT_THEME_FILE"; then
+                log_error "Unable to restore previous theme state."
+                return 1
+            fi
+        elif ! rm -f "$CURRENT_THEME_FILE"; then
+            log_error "Unable to remove current theme state."
+            return 1
+        fi
+
+        log_error "Unable to regenerate palette."
+        return 1
+    fi
+
+    log_success "Palette regenerated."
 }
 
 theme_list() {
