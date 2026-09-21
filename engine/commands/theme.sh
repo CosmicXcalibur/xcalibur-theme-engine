@@ -39,9 +39,15 @@ theme_list() {
             continue
         fi
 
-        unset THEME_ID THEME_NAME THEME_VERSION THEME_AUTHOR THEME_DESCRIPTION
+        if ! theme_manifest_load "$manifest" "$(basename "$theme_dir")"; then
+            log_warn "Skipping $(basename "$theme_dir"): $THEME_MANIFEST_ERROR"
+            continue
+        fi
 
-        source "$manifest"
+        if ! theme_definition_load "$theme_dir/palette.conf" "$THEME_ID"; then
+            log_warn "Skipping $(basename "$theme_dir"): $THEME_DEFINITION_ERROR"
+            continue
+        fi
 
         printf "  %-20s %-25s %s\n" \
             "$THEME_ID" \
@@ -70,6 +76,11 @@ theme_current() {
         return 0
     fi
 
+    if ! theme_id_validate "$theme_id"; then
+        log_warn "Current theme ID is invalid."
+        return 1
+    fi
+
     local manifest="$THEMES_DIR/$theme_id/theme.conf"
 
     if [[ ! -f "$manifest" ]]; then
@@ -77,9 +88,15 @@ theme_current() {
         return 1
     fi
 
-    unset THEME_ID THEME_NAME THEME_VERSION THEME_AUTHOR THEME_DESCRIPTION
+    if ! theme_manifest_load "$manifest" "$theme_id"; then
+        log_warn "Current theme '$theme_id' is invalid: $THEME_MANIFEST_ERROR"
+        return 1
+    fi
 
-    source "$manifest"
+    if ! theme_definition_load "$THEMES_DIR/$theme_id/palette.conf" "$theme_id"; then
+        log_warn "Current theme '$theme_id' is invalid: $THEME_DEFINITION_ERROR"
+        return 1
+    fi
 
     echo "Current theme:"
     echo

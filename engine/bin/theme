@@ -12,6 +12,8 @@ ENGINE_DIR="$(dirname "$BIN_DIR")"
 source "$ENGINE_DIR/lib/common.sh"
 source "$ENGINE_DIR/lib/config.sh"
 source "$ENGINE_DIR/lib/modules.sh"
+source "$ENGINE_DIR/lib/theme_manifest.sh"
+source "$ENGINE_DIR/lib/theme_definition.sh"
 
 load_config
 
