@@ -20,6 +20,8 @@ swaync_apply() {
 
     swaync_install
 
-    swaync_reload
+    if ! swaync_reload; then
+        log_warn "SwayNC configuration installed, but live reload failed."
+    fi
 
 }

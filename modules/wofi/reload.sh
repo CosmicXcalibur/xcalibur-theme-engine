@@ -7,7 +7,10 @@
 wofi_reload() {
 
     if pgrep -x wofi >/dev/null 2>&1; then
-        pkill -x wofi
+        if ! pkill -x wofi; then
+            log_warn "Unable to stop the running Wofi instance."
+            return 1
+        fi
     fi
 
 }

@@ -18,6 +18,8 @@ wofi_apply() {
 
     wofi_install
 
-    wofi_reload
+    if ! wofi_reload; then
+        log_warn "Wofi configuration installed, but live reload failed."
+    fi
 
 }

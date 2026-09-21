@@ -14,6 +14,8 @@ waybar_apply() {
 
     waybar_install
 
-    waybar_reload
+    if ! waybar_reload; then
+        log_warn "Waybar configuration installed, but live reload failed."
+    fi
 
 }
