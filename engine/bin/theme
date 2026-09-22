@@ -14,6 +14,7 @@ source "$ENGINE_DIR/lib/config.sh"
 source "$ENGINE_DIR/lib/modules.sh"
 source "$ENGINE_DIR/lib/theme_manifest.sh"
 source "$ENGINE_DIR/lib/theme_definition.sh"
+source "$ENGINE_DIR/lib/theme_install.sh"
 
 load_config
 

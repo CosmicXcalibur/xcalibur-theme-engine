@@ -13,6 +13,10 @@ Commands:
     version
     status
     doctor
+    list
+    current
+    set <theme-id>
+    install <owner/repo>
 EOF
 
 }

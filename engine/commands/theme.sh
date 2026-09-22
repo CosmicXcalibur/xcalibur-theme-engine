@@ -17,11 +17,15 @@ command_theme() {
         set)
             theme_set "$@"
             ;;
+        install)
+            theme_install "$@"
+            ;;
         *)
             echo "Usage:"
             echo "    theme list"
             echo "    theme current"
             echo "    theme set <theme-id>"
+            echo "    theme install <owner/repo>"
             return 1
             ;;
     esac

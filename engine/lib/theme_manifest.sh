@@ -133,7 +133,7 @@ theme_manifest_load() {
         return 1
     fi
 
-    if [[ "$THEME_ID" != "$expected_id" ]]; then
+    if [[ -n "$expected_id" && "$THEME_ID" != "$expected_id" ]]; then
         theme_manifest_fail "THEME_ID does not match directory name"
         return 1
     fi

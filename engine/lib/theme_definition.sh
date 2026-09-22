@@ -63,14 +63,14 @@ theme_definition_load() {
         return 1
     fi
 
-    if ! theme_id_validate "$expected_id"; then
+    if [[ -n "$expected_id" ]] && ! theme_id_validate "$expected_id"; then
         theme_definition_fail "invalid theme ID: $expected_id"
         return 1
     fi
 
     definition_dir="$(basename "$(dirname "$definition")")"
 
-    if [[ "$definition_dir" != "$expected_id" ]]; then
+    if [[ -n "$expected_id" && "$definition_dir" != "$expected_id" ]]; then
         theme_definition_fail "theme ID does not match palette directory"
         return 1
     fi
