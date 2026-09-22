@@ -99,16 +99,26 @@ color_generate() {
 
     local wallpaper
 
-    wallpaper=$(cat "$STATE_DIR/current_wallpaper")
+    if [[ ! -f "$STATE_DIR/current_wallpaper" ]]; then
+        log_error "No current wallpaper selected."
+        return 1
+    fi
+
+    wallpaper="$(< "$STATE_DIR/current_wallpaper")"
 
     if [[ ! -f "$wallpaper" ]]; then
         log_error "Current wallpaper not found."
         return 1
     fi
 
-    cwal --img "$wallpaper" --no-reload
+    if ! cwal --img "$wallpaper" --no-reload; then
+        log_error "Unable to generate cwal palette."
+        return 1
+    fi
 
-    color_export
+    if ! color_export; then
+        return 1
+    fi
 
     log_success "Palette generated."
 }

@@ -35,11 +35,16 @@ theme_set() {
 
     local theme_id="$2"
     local theme_dir="$THEMES_DIR/$theme_id"
-    local previous_theme_id=""
+    local previous_theme_file=""
     local had_previous_theme=false
 
     if ! theme_id_validate "$theme_id"; then
         log_error "Invalid theme ID: $theme_id"
+        return 1
+    fi
+
+    if [[ ! -d "$theme_dir" ]]; then
+        log_error "Theme '$theme_id' is not installed."
         return 1
     fi
 
@@ -59,20 +64,31 @@ theme_set() {
     fi
 
     if [[ -f "$CURRENT_THEME_FILE" ]]; then
-        previous_theme_id="$(< "$CURRENT_THEME_FILE")"
+        if ! previous_theme_file="$(mktemp "$STATE_DIR/.current_theme.previous.XXXXXX")"; then
+            log_error "Unable to create current theme backup."
+            return 1
+        fi
+
+        if ! cp -- "$CURRENT_THEME_FILE" "$previous_theme_file"; then
+            rm -f -- "$previous_theme_file"
+            log_error "Unable to back up current theme state."
+            return 1
+        fi
+
         had_previous_theme=true
     fi
 
-    if ! printf '%s\n' "$theme_id" > "$CURRENT_THEME_FILE"; then
+    if ! theme_write_current_state "$theme_id"; then
+        [[ -z "$previous_theme_file" ]] || rm -f -- "$previous_theme_file"
         log_error "Unable to write current theme state."
         return 1
     fi
 
     log_success "Theme selected: $theme_id"
 
-    if ! color_generate; then
+    if ! theme_apply; then
         if [[ "$had_previous_theme" == true ]]; then
-            if ! printf '%s\n' "$previous_theme_id" > "$CURRENT_THEME_FILE"; then
+            if ! mv -f -- "$previous_theme_file" "$CURRENT_THEME_FILE"; then
                 log_error "Unable to restore previous theme state."
                 return 1
             fi
@@ -81,11 +97,30 @@ theme_set() {
             return 1
         fi
 
-        log_error "Unable to regenerate palette."
+        log_error "Unable to apply theme '$theme_id'."
         return 1
     fi
 
-    log_success "Palette regenerated."
+    [[ -z "$previous_theme_file" ]] || rm -f -- "$previous_theme_file"
+}
+
+theme_write_current_state() {
+    local theme_id="$1"
+    local state_file
+
+    if ! state_file="$(mktemp "$STATE_DIR/.current_theme.XXXXXX")"; then
+        return 1
+    fi
+
+    if ! printf '%s\n' "$theme_id" > "$state_file"; then
+        rm -f -- "$state_file"
+        return 1
+    fi
+
+    if ! mv -f -- "$state_file" "$CURRENT_THEME_FILE"; then
+        rm -f -- "$state_file"
+        return 1
+    fi
 }
 
 theme_list() {
