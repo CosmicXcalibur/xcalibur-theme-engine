@@ -9,13 +9,11 @@ gtk_install() {
     local gtk3_dir="$HOME/.config/gtk-3.0"
     local gtk4_dir="$HOME/.config/gtk-4.0"
 
-    mkdir -p "$gtk3_dir" "$gtk4_dir"
-
-    install -m 644 \
+    fs_install_atomic \
         "$GENERATED_DIR/gtk-3.0.css" \
-        "$gtk3_dir/gtk.css"
+        "$gtk3_dir/gtk.css" || return 1
 
-    install -m 644 \
+    fs_install_atomic \
         "$GENERATED_DIR/gtk-4.0.css" \
         "$gtk4_dir/gtk.css"
 }

@@ -19,6 +19,22 @@ theme_install_root_file_validate() {
     [[ -f "$file" && ! -L "$file" ]]
 }
 
+theme_install_rollback() {
+    local theme_dir="$1"
+    if ! fs_directory_safe "$THEMES_DIR" false ||
+       [[ ! -d "$theme_dir" || -L "$theme_dir" ]]; then
+        log_warn "Partial theme directory needs manual cleanup: $theme_dir"
+        return 1
+    fi
+    # Only these two names are created by the installer. Leave an unexpected
+    # directory entry untouched rather than recursively removing it.
+    if ! rm -f -- "$theme_dir/theme.conf" "$theme_dir/palette.conf" ||
+       ! rmdir -- "$theme_dir"; then
+        log_warn "Partial theme directory needs manual cleanup: $theme_dir"
+        return 1
+    fi
+}
+
 theme_install() {
     if [[ "$#" -ne 2 ]]; then
         log_error "Usage: theme install <owner/repo>"
@@ -53,7 +69,9 @@ theme_install() {
     manifest="$repository_dir/theme.conf"
     definition="$repository_dir/palette.conf"
 
-    if ! GIT_TERMINAL_PROMPT=0 git clone \
+    if ! GIT_TERMINAL_PROMPT=0 GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 \
+        git -c init.templateDir=/dev/null -c core.hooksPath=/dev/null \
+        -c protocol.file.allow=never clone \
         --depth 1 \
         --no-recurse-submodules \
         --quiet \
@@ -98,13 +116,21 @@ theme_install() {
 
     theme_dir="$THEMES_DIR/$theme_id"
 
+    if [[ "$THEMES_DIR" != "$THEME_ROOT/themes" ]] ||
+       ! fs_directory_safe "$THEMES_DIR" true; then
+        rm -rf -- "$staging_dir"
+        log_error "Unsafe or unwritable themes directory: $THEMES_DIR"
+        return 1
+    fi
+
     if [[ -e "$theme_dir" || -L "$theme_dir" ]]; then
         rm -rf -- "$staging_dir"
         log_error "Theme '$theme_id' is already installed."
         return 1
     fi
 
-    if ! mkdir -p "$theme_dir"; then
+    # Plain mkdir is exclusive: a concurrent installer cannot claim this ID.
+    if ! mkdir -m 700 -- "$theme_dir"; then
         rm -rf -- "$staging_dir"
         log_error "Unable to create theme directory: $theme_dir"
         return 1
@@ -113,9 +139,7 @@ theme_install() {
 
     if ! cp -- "$manifest" "$theme_dir/theme.conf" ||
        ! cp -- "$definition" "$theme_dir/palette.conf"; then
-        if [[ "$destination_created" == true ]]; then
-            rm -rf -- "$theme_dir"
-        fi
+        [[ "$destination_created" != true ]] || theme_install_rollback "$theme_dir" || true
         rm -rf -- "$staging_dir"
         log_error "Unable to install theme '$theme_id'."
         return 1
@@ -125,9 +149,7 @@ theme_install() {
        ! theme_install_root_file_validate "$theme_dir/palette.conf" ||
        ! theme_manifest_load "$theme_dir/theme.conf" "$theme_id" ||
        ! theme_definition_load "$theme_dir/palette.conf" "$theme_id"; then
-        if [[ "$destination_created" == true ]]; then
-            rm -rf -- "$theme_dir"
-        fi
+        [[ "$destination_created" != true ]] || theme_install_rollback "$theme_dir" || true
         rm -rf -- "$staging_dir"
         log_error "Installed theme '$theme_id' failed verification."
         return 1

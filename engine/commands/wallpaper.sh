@@ -9,14 +9,17 @@ command_wallpaper() {
             ;;
 
         current)
+            [[ "$#" -eq 1 ]] || { log_error "Usage: theme wallpaper current"; return 1; }
             wallpaper_current
             ;;
 
         list)
+            [[ "$#" -eq 1 ]] || { log_error "Usage: theme wallpaper list"; return 1; }
             wallpaper_list
             ;;
 
         random)
+            [[ "$#" -eq 1 ]] || { log_error "Usage: theme wallpaper random"; return 1; }
             wallpaper_random
             ;;
 
@@ -26,7 +29,9 @@ command_wallpaper() {
             ;;
 
         *)
+            log_error "Unknown wallpaper command: ${1:-}"
             wallpaper_help
+            return 1
             ;;
     esac
 

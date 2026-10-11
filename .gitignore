@@ -16,3 +16,7 @@ runtime/
 
 # macOS
 .DS_Store
+
+# Python importer bytecode
+__pycache__/
+*.pyc

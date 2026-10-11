@@ -52,6 +52,13 @@ color_apply_selected_theme_overlay() {
 
     theme_dir="$THEMES_DIR/$theme_id"
 
+    if [[ -L "$theme_dir" ]] ||
+       ! theme_install_root_file_validate "$theme_dir/theme.conf" ||
+       ! theme_install_root_file_validate "$theme_dir/palette.conf"; then
+        log_error "Selected theme '$theme_id' has unsafe or missing files."
+        return 1
+    fi
+
     if ! theme_manifest_load "$theme_dir/theme.conf" "$theme_id"; then
         log_error "Selected theme '$theme_id' is invalid: $THEME_MANIFEST_ERROR"
         return 1
@@ -106,7 +113,7 @@ color_generate() {
 
     wallpaper="$(< "$STATE_DIR/current_wallpaper")"
 
-    if [[ ! -f "$wallpaper" ]]; then
+    if [[ ! -f "$wallpaper" || ! -r "$wallpaper" || "$wallpaper" =~ [[:cntrl:]] ]]; then
         log_error "Current wallpaper not found."
         return 1
     fi
@@ -134,12 +141,22 @@ color_export() {
         return 1
     fi
 
-    mkdir -p "$GENERATED_DIR"
+    if ! color_data_read "$CWAL_COLORS" cwal; then
+        log_error "CWAL palette is missing required colors or contains invalid colors."
+        return 1
+    fi
 
-    # Source cwal palette safely
-    set +u
-    source "$CWAL_COLORS"
-    set -u
+    local background="${COLOR_DATA[background]}"
+    local foreground="${COLOR_DATA[foreground]}"
+    local cursor="${COLOR_DATA[cursor]}"
+    local color0="${COLOR_DATA[color0]}" color1="${COLOR_DATA[color1]}"
+    local color2="${COLOR_DATA[color2]}" color3="${COLOR_DATA[color3]}"
+    local color4="${COLOR_DATA[color4]}" color5="${COLOR_DATA[color5]}"
+    local color6="${COLOR_DATA[color6]}" color7="${COLOR_DATA[color7]}"
+    local color8="${COLOR_DATA[color8]}" color9="${COLOR_DATA[color9]}"
+    local color10="${COLOR_DATA[color10]}" color11="${COLOR_DATA[color11]}"
+    local color12="${COLOR_DATA[color12]}" color13="${COLOR_DATA[color13]}"
+    local color14="${COLOR_DATA[color14]}" color15="${COLOR_DATA[color15]}"
 
     # Preserve the existing CWAL semantic defaults unless a selected pack
     # declares a validated override for a specific semantic role.
@@ -159,9 +176,15 @@ color_export() {
     local final_selection="$color5"
     local final_highlight="$color6"
 
-    color_apply_selected_theme_overlay
+    if ! color_apply_selected_theme_overlay; then
+        return 1
+    fi
 
-    cat > "$RUNTIME_COLORS" <<EOF
+    fs_directory_safe "$GENERATED_DIR" true || return 1
+    local runtime_tmp
+    runtime_tmp="$(mktemp "$GENERATED_DIR/.colors.XXXXXX")" || return 1
+
+    cat > "$runtime_tmp" <<EOF
 #!/usr/bin/env bash
 
 # ==========================================================
@@ -169,7 +192,7 @@ color_export() {
 # Auto-generated. Do not edit.
 # ==========================================================
 
-WALLPAPER="$wallpaper"
+WALLPAPER=$(printf '%q' "$wallpaper")
 
 # ----------------------------------------------------------
 # Base colors
@@ -223,6 +246,12 @@ SELECTION="$final_selection"
 HIGHLIGHT="$final_highlight"
 
 EOF
+
+    if ! color_data_read "$runtime_tmp" runtime || ! mv -f -- "$runtime_tmp" "$RUNTIME_COLORS"; then
+        rm -f -- "$runtime_tmp"
+        log_error "Unable to install validated runtime palette."
+        return 1
+    fi
 
     log_success "Runtime palette updated."
 }

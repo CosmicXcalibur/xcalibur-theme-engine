@@ -6,9 +6,7 @@
 
 wofi_install() {
 
-    mkdir -p "$HOME/.config/wofi"
-
-    install -m 644 \
+    fs_install_atomic \
         "$GENERATED_DIR/wofi.css" \
         "$HOME/.config/wofi/style.css"
 

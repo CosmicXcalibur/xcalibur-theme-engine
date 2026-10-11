@@ -2,9 +2,7 @@
 
 kitty_install() {
 
-    mkdir -p "$HOME/.config/kitty"
-
-    cp \
+    fs_install_atomic \
         "$GENERATED_DIR/kitty.conf" \
         "$HOME/.config/kitty/current-theme.conf"
 

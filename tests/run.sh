@@ -1,0 +1,385 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+TEST_TMP="$(mktemp -d "${TMPDIR:-/tmp}/xcalibur-tests.XXXXXX")"
+trap 'rm -rf -- "$TEST_TMP"' EXIT
+EXPECTED_FAILURE_LOG="$TEST_TMP/expected-failures.log"
+expect_failure() {
+    local label="$1"
+    shift
+    if "$@" >> "$EXPECTED_FAILURE_LOG" 2>&1; then
+        printf 'Unexpected success: %s\n' "$label" >&2
+        return 1
+    fi
+    printf '[expected failure] %s\n' "$label"
+}
+
+source "$ROOT/engine/lib/common.sh"
+source "$ROOT/engine/lib/theme_manifest.sh"
+source "$ROOT/engine/lib/theme_definition.sh"
+source "$ROOT/engine/lib/color_data.sh"
+source "$ROOT/engine/lib/theme_install.sh"
+source "$ROOT/engine/lib/filesystem.sh"
+source "$ROOT/engine/lib/modules.sh"
+
+GENERATED_DIR="$TEST_TMP/generated"
+STATE_DIR="$TEST_TMP/state"
+THEMES_DIR="$TEST_TMP/themes"
+MODULES_DIR="$TEST_TMP/modules"
+CURRENT_THEME_FILE="$STATE_DIR/current_theme"
+CWAL_COLORS="$TEST_TMP/cwal.sh"
+RUNTIME_COLORS="$GENERATED_DIR/colors.sh"
+mkdir -p "$GENERATED_DIR" "$STATE_DIR" "$THEMES_DIR" "$MODULES_DIR"
+ln -s "$ROOT/engine/bin/theme" "$TEST_TMP/theme"
+[[ "$("$TEST_TMP/theme" status)" == *"Engine: $ROOT"* ]]
+source "$ROOT/engine/services/color_engine.sh"
+source "$ROOT/engine/renderer/template.sh"
+source "$ROOT/engine/services/apply.sh"
+source "$ROOT/engine/services/wallpaper.sh"
+source "$ROOT/engine/commands/theme.sh"
+source "$ROOT/modules/kitty/reload.sh"
+source "$ROOT/modules/waybar/reload.sh"
+source "$ROOT/modules/swaync/reload.sh"
+source "$ROOT/modules/hyprlock/reload.sh"
+CWAL_COLORS="$TEST_TMP/cwal.sh"
+RUNTIME_COLORS="$GENERATED_DIR/colors.sh"
+
+{
+    printf "background='#010203'\nforeground='#eeeeee'\ncursor='#ffffff'\n"
+    for n in {0..15}; do printf "color%d='#%06x'\n" "$n" "$n"; done
+    printf 'touch "%s"\n' "$TEST_TMP/executed"
+} > "$CWAL_COLORS"
+
+wallpaper="$TEST_TMP/wallpaper with spaces.png"
+touch "$wallpaper"
+printf '%s\n' "$wallpaper" > "$STATE_DIR/current_wallpaper"
+color_export
+printf 'old\n' > "$TEST_TMP/live.conf"
+printf 'new\n' > "$TEST_TMP/generated.conf"
+fs_install_atomic "$TEST_TMP/generated.conf" "$TEST_TMP/live.conf"
+[[ "$(cat "$TEST_TMP/live.conf")" == new ]]
+expect_failure 'missing generated source preserves target' fs_install_atomic \
+    "$TEST_TMP/missing" "$TEST_TMP/live.conf"
+[[ "$(cat "$TEST_TMP/live.conf")" == new ]]
+mv() { return 99; }
+expect_failure 'failed atomic replacement preserves target' fs_install_atomic \
+    "$TEST_TMP/generated.conf" "$TEST_TMP/live.conf"
+unset -f mv
+[[ "$(cat "$TEST_TMP/live.conf")" == new ]]
+[[ -z "$(find "$TEST_TMP" -maxdepth 1 -name '.xcalibur.*' -print -quit)" ]]
+ln -s "$TEST_TMP/live.conf" "$TEST_TMP/live-link.conf"
+expect_failure 'symlinked application target' fs_install_atomic \
+    "$TEST_TMP/generated.conf" "$TEST_TMP/live-link.conf"
+[[ -L "$TEST_TMP/live-link.conf" ]]
+mkdir -p "$TEST_TMP/real-config"
+printf 'untouched\n' > "$TEST_TMP/real-config/theme.conf"
+ln -s "$TEST_TMP/real-config" "$TEST_TMP/config-link"
+expect_failure 'symlinked application parent' fs_install_atomic \
+    "$TEST_TMP/generated.conf" "$TEST_TMP/config-link/theme.conf"
+[[ "$(cat "$TEST_TMP/real-config/theme.conf")" == untouched ]]
+[[ -z "$(find "$TEST_TMP/real-config" -name '.xcalibur.*' -print -quit)" ]]
+mkdir -p "$TEST_TMP/target-directory"
+expect_failure 'directory as target' fs_install_atomic \
+    "$TEST_TMP/generated.conf" "$TEST_TMP/target-directory"
+mkdir -p "$TEST_TMP/app-home/.config" "$TEST_TMP/actual-hypr" "$TEST_TMP/actual-swaync"
+ln -s "$TEST_TMP/actual-hypr" "$TEST_TMP/app-home/.config/hypr"
+ln -s "$TEST_TMP/actual-swaync" "$TEST_TMP/app-home/.config/swaync"
+printf 'old lock\n' > "$TEST_TMP/actual-hypr/hyprlock.conf"
+printf 'old notifications\n' > "$TEST_TMP/actual-swaync/style.css"
+printf 'new lock\n' > "$GENERATED_DIR/hyprlock.conf"
+printf 'new notifications\n' > "$GENERATED_DIR/swaync.css"
+hyprlock_install_fixture() (
+    HOME="$TEST_TMP/app-home"
+    source "$ROOT/modules/hyprlock/install.sh"
+    hyprlock_install
+)
+swaync_install_fixture() (
+    HOME="$TEST_TMP/app-home"
+    source "$ROOT/modules/swaync/install.sh"
+    swaync_install
+)
+expect_failure 'Hyprlock symlinked parent before backup' hyprlock_install_fixture
+expect_failure 'SwayNC symlinked parent before backup' swaync_install_fixture
+[[ "$(cat "$TEST_TMP/actual-hypr/hyprlock.conf")" == 'old lock' ]]
+[[ "$(cat "$TEST_TMP/actual-swaync/style.css")" == 'old notifications' ]]
+[[ ! -e "$TEST_TMP/actual-hypr/hyprlock.conf.xcalibur-backup" ]]
+[[ ! -e "$TEST_TMP/actual-swaync/style.css.xcalibur-backup" ]]
+mkdir -p "$TEST_TMP/safe-home/.config/hypr"
+printf 'old lock\n' > "$TEST_TMP/safe-home/.config/hypr/hyprlock.conf"
+printf 'outside\n' > "$TEST_TMP/backup-outside"
+ln -s "$TEST_TMP/backup-outside" "$TEST_TMP/safe-home/.config/hypr/hyprlock.conf.xcalibur-backup"
+hyprlock_backup_fixture() (
+    HOME="$TEST_TMP/safe-home"
+    source "$ROOT/modules/hyprlock/install.sh"
+    hyprlock_install
+)
+expect_failure 'Hyprlock symlinked backup' hyprlock_backup_fixture
+[[ "$(cat "$TEST_TMP/backup-outside")" == outside ]]
+[[ "$(cat "$TEST_TMP/safe-home/.config/hypr/hyprlock.conf")" == 'old lock' ]]
+mkdir -p "$TEST_TMP/normal-home/.config/hypr" "$TEST_TMP/normal-home/.config/kitty"
+printf 'old lock\n' > "$TEST_TMP/normal-home/.config/hypr/hyprlock.conf"
+printf 'new kitty\n' > "$GENERATED_DIR/kitty.conf"
+normal_install_fixture() (
+    HOME="$TEST_TMP/normal-home"
+    source "$ROOT/modules/hyprlock/install.sh"
+    source "$ROOT/modules/kitty/install.sh"
+    hyprlock_install
+    kitty_install
+)
+normal_install_fixture
+[[ "$(cat "$TEST_TMP/normal-home/.config/hypr/hyprlock.conf")" == 'new lock' ]]
+[[ "$(cat "$TEST_TMP/normal-home/.config/hypr/hyprlock.conf.xcalibur-backup")" == 'old lock' ]]
+[[ "$(cat "$TEST_TMP/normal-home/.config/kitty/current-theme.conf")" == 'new kitty' ]]
+
+mkdir -p "$TEST_TMP/config-root/config"
+printf 'touch "%s"\n' "$TEST_TMP/config-executed" > "$TEST_TMP/untrusted-config"
+ln -s "$TEST_TMP/untrusted-config" "$TEST_TMP/config-root/config/theme.conf"
+config_load_fixture() (
+    THEME_ROOT="$TEST_TMP/config-root"
+    source "$ROOT/engine/lib/config.sh"
+    load_config
+)
+expect_failure 'symlinked trusted configuration' config_load_fixture
+[[ ! -e "$TEST_TMP/config-executed" ]]
+mkdir -p "$TEST_TMP/untrusted-modules/module"
+printf 'touch "%s"\n' "$TEST_TMP/module-executed" > "$TEST_TMP/untrusted-modules/module/module.sh"
+module_load_fixture() (
+    THEME_ROOT="$TEST_TMP/config-root"
+    MODULES_DIR="$TEST_TMP/untrusted-modules"
+    load_modules
+)
+expect_failure 'module code outside engine root' module_load_fixture
+[[ ! -e "$TEST_TMP/module-executed" ]]
+pgrep() { return 1; }
+kitty_reload
+waybar_reload
+swaync_reload
+hyprlock_reload
+[[ ! -e "$TEST_TMP/executed" ]]
+color_data_read "$RUNTIME_COLORS" runtime
+[[ "${COLOR_DATA[COLOR15]}" == '#00000f' ]]
+for template in "$ROOT"/modules/*/templates/*.template; do
+    module="$(basename "$(dirname "$(dirname "$template")")")"
+    render_template "$template" "$TEST_TMP/rendered/$module/$(basename "$template")"
+done
+
+printf 'before {{BACKGROUND}} after {{COLOR4}}\n' > "$TEST_TMP/template"
+render_template "$TEST_TMP/template" "$TEST_TMP/output"
+[[ "$(cat "$TEST_TMP/output")" == 'before #010203 after #000004' ]]
+printf '{{BACKGROUND}}/{{COLOR4}}/{{FOREGROUND}}/{{BACKGROUND}}\n' > "$TEST_TMP/template"
+render_template "$TEST_TMP/template" "$TEST_TMP/output"
+[[ "$(cat "$TEST_TMP/output")" == '#010203/#000004/#eeeeee/#010203' ]]
+mkdir -p "$TEST_TMP/real-generated"
+printf 'previous generated output\n' > "$TEST_TMP/real-generated/output"
+ln -s "$TEST_TMP/real-generated" "$TEST_TMP/generated-link"
+printf 'valid {{BACKGROUND}}\n' > "$TEST_TMP/template"
+expect_failure 'renderer symlinked output parent' render_template \
+    "$TEST_TMP/template" "$TEST_TMP/generated-link/output"
+[[ "$(cat "$TEST_TMP/real-generated/output")" == 'previous generated output' ]]
+color_symlink_fixture() (
+    GENERATED_DIR="$TEST_TMP/generated-link"
+    RUNTIME_COLORS="$GENERATED_DIR/colors.sh"
+    color_export
+)
+expect_failure 'palette symlinked output parent' color_symlink_fixture
+[[ ! -e "$TEST_TMP/real-generated/colors.sh" ]]
+printf 'invalid {{MISSING}}\n' > "$TEST_TMP/template"
+expect_failure 'unknown template variable' render_template "$TEST_TMP/template" "$TEST_TMP/output"
+[[ "$(cat "$TEST_TMP/output")" == '#010203/#000004/#eeeeee/#010203' ]]
+printf 'valid first {{BACKGROUND}}\ninvalid second {{BACKGROUND}\n' > "$TEST_TMP/template"
+expect_failure 'malformed template variable' render_template "$TEST_TMP/template" "$TEST_TMP/output"
+[[ "$(cat "$TEST_TMP/output")" == '#010203/#000004/#eeeeee/#010203' ]]
+
+python3 - "$CWAL_COLORS" "$TEST_TMP/executed" <<'PY'
+import pathlib, sys
+path = pathlib.Path(sys.argv[1])
+path.write_text(path.read_text().replace("color0='#000000'", f"color0=$(touch {sys.argv[2]})"))
+PY
+expect_failure 'invalid CWAL data' color_export
+[[ ! -e "$TEST_TMP/executed" ]]
+
+mkdir -p "$MODULES_DIR/alpha" "$MODULES_DIR/beta"
+ALPHA_ENABLED=true BETA_ENABLED=true
+phase_log="$TEST_TMP/phases"
+color_generate() { :; }
+alpha_render() { printf 'alpha render\n' >> "$phase_log"; }
+beta_render() { printf 'beta render\n' >> "$phase_log"; return 1; }
+alpha_install() { printf 'alpha install\n' >> "$phase_log"; }
+beta_install() { printf 'beta install\n' >> "$phase_log"; }
+alpha_reload() { :; }
+beta_reload() { :; }
+expect_failure 'module render failure' theme_apply
+[[ "$THEME_APPLY_PHASE" == render ]]
+[[ "$(cat "$phase_log")" == $'alpha render\nbeta render' ]]
+beta_render() { printf 'beta render\n' >> "$phase_log"; }
+alpha_install() { printf 'alpha install\n' >> "$phase_log"; return 1; }
+expect_failure 'module install failure' theme_apply
+[[ "$THEME_APPLY_PHASE" == install ]]
+
+WALLPAPER_DIR="$TEST_TMP/wallpapers"
+mkdir -p "$WALLPAPER_DIR"
+touch "$WALLPAPER_DIR/a space.png"
+rm -f -- "$STATE_DIR/current_wallpaper"
+wallpaper_reload() { return 1; }
+expect_failure 'wallpaper reload failure' wallpaper_set "$WALLPAPER_DIR/a space.png"
+[[ ! -e "$STATE_DIR/current_wallpaper" ]]
+wallpaper_reload() { :; }
+theme_apply() { return 1; }
+expect_failure 'wallpaper apply failure' wallpaper_set "$WALLPAPER_DIR/a space.png"
+[[ "$(cat "$STATE_DIR/current_wallpaper")" == "$WALLPAPER_DIR/a space.png" ]]
+
+mkdir -p "$THEMES_DIR/xcalibur-test"
+cp "$ROOT/themes/xcalibur-test/"* "$THEMES_DIR/xcalibur-test/"
+printf 'xcalibur-test\n' > "$CURRENT_THEME_FILE"
+cp "$RUNTIME_COLORS" "$TEST_TMP/previous-colors"
+theme_apply() {
+    THEME_APPLY_PHASE=render
+    printf 'incomplete\n' > "$RUNTIME_COLORS"
+    return 1
+}
+expect_failure 'theme selection rollback' theme_set set xcalibur-test
+cmp -s "$RUNTIME_COLORS" "$TEST_TMP/previous-colors"
+[[ "$(cat "$CURRENT_THEME_FILE")" == xcalibur-test ]]
+
+mkdir -p "$TEST_TMP/native-fixture"
+cp "$ROOT/themes/xcalibur-test/theme.conf" "$ROOT/themes/xcalibur-test/palette.conf" "$TEST_TMP/native-fixture/"
+mkdir -p "$TEST_TMP/native-stage"
+TMPDIR="$TEST_TMP/native-stage"
+export TMPDIR
+THEME_ROOT="$TEST_TMP/native-root"
+THEMES_DIR="$THEME_ROOT/themes"
+mkdir -p "$THEME_ROOT"
+git() {
+    local destination="${@: -1}"
+    mkdir -p "$destination"
+    cp "$TEST_TMP/native-fixture/"* "$destination/"
+}
+theme_install install owner/repo
+[[ -f "$THEMES_DIR/xcalibur-test/theme.conf" ]]
+expect_failure 'existing native theme' theme_install install owner/repo
+[[ -f "$THEMES_DIR/xcalibur-test/palette.conf" ]]
+cmp -s "$THEMES_DIR/xcalibur-test/palette.conf" "$TEST_TMP/native-fixture/palette.conf"
+mkdir -p "$TEST_TMP/outside-themes" "$TEST_TMP/native-link-root"
+ln -s "$TEST_TMP/outside-themes" "$TEST_TMP/native-link-root/themes"
+THEME_ROOT="$TEST_TMP/native-link-root"
+THEMES_DIR="$THEME_ROOT/themes"
+expect_failure 'symlinked themes directory' theme_install install owner/repo
+[[ -z "$(find "$TEST_TMP/outside-themes" -mindepth 1 -print -quit)" ]]
+ln -s "$TEST_TMP/outside-themes" "$TEST_TMP/native-parent-link"
+THEME_ROOT="$TEST_TMP/native-parent-link"
+THEMES_DIR="$THEME_ROOT/themes"
+expect_failure 'symlinked parent of themes directory' theme_install install owner/repo
+[[ -z "$(find "$TEST_TMP/outside-themes" -mindepth 1 -print -quit)" ]]
+THEME_ROOT="$TEST_TMP/native-root"
+THEMES_DIR="$TEST_TMP/outside-themes"
+expect_failure 'themes directory outside engine root' theme_install install owner/repo
+THEME_ROOT="$TEST_TMP/native-failure-root"
+THEMES_DIR="$THEME_ROOT/themes"
+mkdir -p "$THEME_ROOT"
+cp() {
+    if [[ "$1" == -- && "$2" == */repository/palette.conf && "$3" == "$THEMES_DIR/"* ]]; then
+        return 1
+    fi
+    command cp "$@"
+}
+expect_failure 'native copy failure rolls back' theme_install install owner/repo
+[[ ! -e "$THEMES_DIR/xcalibur-test" ]]
+[[ -z "$(find "$TMPDIR" -mindepth 1 -print -quit)" ]]
+unset -f cp
+
+mkdir -p "$TEST_TMP/repo/dotfiles/kitty" "$TEST_TMP/repo/waybar"
+printf 'background #112233\nforeground #eeeeee\ncolor4 #778899\n' > "$TEST_TMP/repo/dotfiles/kitty/colors.conf"
+printf ':root { --background: #112233; --accent: #abcdef; }\n' > "$TEST_TMP/repo/waybar/style.css"
+ln -s /etc/passwd "$TEST_TMP/repo/waybar/linked.css"
+ln -s /etc "$TEST_TMP/repo/external-dir"
+python3 "$ROOT/engine/importer/analyze.py" "$TEST_TMP/repo" owner/repo deadbeef > "$TEST_TMP/report.json"
+python3 - "$TEST_TMP/report.json" <<'PY'
+import json, sys
+report = json.load(open(sys.argv[1]))
+assert len(report['inventory']) == 2
+assert report['semantic_roles']['BACKGROUND']['value'] == '#112233'
+assert report['semantic_roles']['ACCENT']['value'] == '#ABCDEF'
+assert report['theme_pack_generated'] is False
+assert all(item['path'] != 'waybar/linked.css' for item in report['inventory'])
+assert any(item['reason'] == 'not_regular_file' for item in report['skipped'])
+assert any(item['reason'] == 'symlink_directory' for item in report['skipped'])
+PY
+printf ':root { --background: #445566; }\n' > "$TEST_TMP/repo/waybar/alternate.css"
+python3 "$ROOT/engine/importer/analyze.py" "$TEST_TMP/repo" owner/repo deadbeef > "$TEST_TMP/conflict.json"
+python3 - "$TEST_TMP/conflict.json" <<'PY'
+import json, sys
+report = json.load(open(sys.argv[1]))
+assert 'BACKGROUND' not in report['semantic_roles']
+assert any(item['role'] == 'BACKGROUND' for item in report['conflicts'])
+PY
+
+unset -f git
+source "$ROOT/engine/commands/import.sh"
+ENGINE_DIR="$ROOT/engine"
+mkdir -p "$TEST_TMP/mock-bin" "$TEST_TMP/import-stage"
+cat > "$TEST_TMP/mock-bin/git" <<'MOCK_GIT'
+#!/usr/bin/env bash
+[[ "$GIT_CONFIG_GLOBAL" == /dev/null && "$GIT_CONFIG_NOSYSTEM" == 1 ]] || exit 90
+printf '%s\n' "$*" >> "$IMPORT_GIT_LOG"
+operation=""
+for argument in "$@"; do
+    case "$argument" in clone|rev-parse) operation="$argument" ;; esac
+done
+case "$operation" in
+    clone)
+        mkdir -p "${@: -1}"
+        [[ "$IMPORT_GIT_MODE" != clone-fail ]] || exit 11
+        ;;
+    rev-parse)
+        [[ "$IMPORT_GIT_MODE" != revision-fail ]] || exit 12
+        printf '%040d\n' 0
+        ;;
+    *) exit 13 ;;
+esac
+MOCK_GIT
+chmod +x "$TEST_TMP/mock-bin/git"
+PATH="$TEST_TMP/mock-bin:$PATH"
+TMPDIR="$TEST_TMP/import-stage"
+IMPORT_GIT_LOG="$TEST_TMP/import-git.log"
+export PATH TMPDIR IMPORT_GIT_LOG
+import_staging_empty() {
+    [[ -z "$(find "$TMPDIR" -mindepth 1 -print -quit)" ]]
+}
+IMPORT_GIT_MODE=clone-fail
+export IMPORT_GIT_MODE
+expect_failure 'failed clone cleans staging' command_import analyze owner/repo
+import_staging_empty
+[[ "$(cat "$EXPECTED_FAILURE_LOG")" == *'Unable to retrieve GitHub repository: owner/repo'* ]]
+IMPORT_GIT_MODE=revision-fail
+expect_failure 'failed revision lookup cleans staging' command_import analyze owner/repo
+import_staging_empty
+[[ "$(cat "$EXPECTED_FAILURE_LOG")" == *'Unable to identify repository revision: owner/repo'* ]]
+IMPORT_GIT_MODE=ok
+python3() { exit 77; }
+expect_failure 'shell exit during analysis cleans staging' command_import analyze owner/repo
+import_staging_empty
+python3() { kill -TERM "$BASHPID"; }
+expect_failure 'signal during analysis cleans staging' command_import analyze owner/repo
+import_staging_empty
+unset -f python3
+command_import analyze owner/repo > "$TEST_TMP/import-report.json"
+import_staging_empty
+python3 - "$TEST_TMP/import-report.json" <<'PY'
+import json, sys
+report = json.load(open(sys.argv[1]))
+assert report['mode'] == 'analysis_only'
+assert report['installed'] is False and report['applied'] is False
+assert report['revision'] == '0' * 40
+PY
+[[ "$(wc -l < "$IMPORT_GIT_LOG")" -ge 8 ]]
+rm() {
+    if [[ "$*" == *xcalibur-import.* ]]; then return 99; fi
+    command rm "$@"
+}
+expect_failure 'cleanup error returns failure' command_import analyze owner/repo
+[[ "$(cat "$EXPECTED_FAILURE_LOG")" == *'Unable to remove import staging directory:'* ]]
+unset -f rm
+rm -rf -- "$TEST_TMP/import-stage"
+
+echo 'All isolated tests passed.'

@@ -2,9 +2,7 @@
 
 waybar_install() {
 
-    mkdir -p "$HOME/.config/waybar/styles/colors"
-
-    cp \
+    fs_install_atomic \
         "$GENERATED_DIR/xcalibur.css" \
         "$HOME/.config/waybar/styles/colors/xcalibur.css"
 

@@ -2,8 +2,9 @@
 
 set -Eeuo pipefail
 
-BIN_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+BIN_DIR="$(dirname "$(readlink -f -- "${BASH_SOURCE[0]}")")"
 ENGINE_DIR="$(dirname "$BIN_DIR")"
+THEME_ROOT="$(dirname "$ENGINE_DIR")"
 
 # ==========================================================
 # Libraries
@@ -15,6 +16,8 @@ source "$ENGINE_DIR/lib/modules.sh"
 source "$ENGINE_DIR/lib/theme_manifest.sh"
 source "$ENGINE_DIR/lib/theme_definition.sh"
 source "$ENGINE_DIR/lib/theme_install.sh"
+source "$ENGINE_DIR/lib/color_data.sh"
+source "$ENGINE_DIR/lib/filesystem.sh"
 
 load_config
 
@@ -52,6 +55,7 @@ source "$ENGINE_DIR/commands/doctor.sh"
 source "$ENGINE_DIR/commands/render.sh"
 source "$ENGINE_DIR/commands/wallpaper.sh"
 source "$ENGINE_DIR/commands/palette.sh"
+source "$ENGINE_DIR/commands/import.sh"
 
 # ==========================================================
 # Theme Pipeline
@@ -106,6 +110,11 @@ main() {
         render)
             shift
             command_render "$@"
+            ;;
+
+        import)
+            shift
+            command_import "$@"
             ;;
 
         *)

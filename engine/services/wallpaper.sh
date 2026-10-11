@@ -5,17 +5,21 @@
 # ==========================================================
 
 wallpaper_validate() {
-
     local wallpaper="$1"
-
-    [[ -f "$WALLPAPER_DIR/$wallpaper" ]]
+    [[ -f "$wallpaper" && -r "$wallpaper" && ! "$wallpaper" =~ [[:cntrl:]] ]] &&
+        [[ "${wallpaper,,}" =~ \.(png|jpg|jpeg|webp)$ ]]
 }
 
 wallpaper_save_state() {
-
     local wallpaper="$1"
-
-    echo "$wallpaper" > "$STATE_DIR/current_wallpaper"
+    local state_file
+    mkdir -p "$STATE_DIR" || return 1
+    state_file="$(mktemp "$STATE_DIR/.current_wallpaper.XXXXXX")" || return 1
+    if ! printf '%s\n' "$wallpaper" > "$state_file" ||
+       ! mv -f -- "$state_file" "$STATE_DIR/current_wallpaper"; then
+        rm -f -- "$state_file"
+        return 1
+    fi
 }
 
 wallpaper_reload() {
@@ -85,26 +89,34 @@ wallpaper_current() {
 }
 
 wallpaper_set() {
-
-    local wallpaper="$1"
-
-    if [[ -z "$wallpaper" ]]; then
+    if [[ "$#" -ne 1 || -z "$1" ]]; then
         log_error "Usage: theme wallpaper set <file>"
         return 1
     fi
+    local wallpaper="$1" fullpath
+    if [[ "$wallpaper" = /* ]]; then
+        fullpath="$wallpaper"
+    else
+        fullpath="$WALLPAPER_DIR/$wallpaper"
+    fi
 
-    if ! wallpaper_validate "$wallpaper"; then
+    if ! wallpaper_validate "$fullpath"; then
         log_error "Wallpaper not found: $wallpaper"
         return 1
     fi
 
-    local fullpath="$WALLPAPER_DIR/$wallpaper"
-
-    wallpaper_save_state "$fullpath"
-
-    wallpaper_reload "$fullpath"
-
-    theme_apply
+    if ! wallpaper_reload "$fullpath"; then
+        log_error "Unable to set wallpaper."
+        return 1
+    fi
+    if ! wallpaper_save_state "$fullpath"; then
+        log_error "Wallpaper changed, but its state could not be recorded."
+        return 1
+    fi
+    if ! theme_apply; then
+        log_error "Wallpaper changed, but theme application failed."
+        return 1
+    fi
 
     log_success "Wallpaper updated."
 
@@ -117,7 +129,7 @@ wallpaper_random() {
 
     local wallpaper
 
-    wallpaper=$(basename "$(wallpaper_pick_random)")
+    wallpaper="$(wallpaper_pick_random)"
 
     if [[ -z "$wallpaper" ]]; then
         log_error "No wallpapers found."

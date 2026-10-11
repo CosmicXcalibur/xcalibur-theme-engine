@@ -4,11 +4,12 @@
 # Theme Engine Configuration Loader
 # ==========================================================
 
-CONFIG_DIR="$HOME/.config/theme/config"
+CONFIG_DIR="$THEME_ROOT/config"
 
 load_config() {
 
     local file
+    fs_directory_safe "$CONFIG_DIR" false || die "Unsafe configuration directory: $CONFIG_DIR"
 
     for file in \
         "$CONFIG_DIR/theme.conf" \
@@ -16,8 +17,8 @@ load_config() {
         "$CONFIG_DIR/applications.conf"
     do
 
-        if [[ ! -f "$file" ]]; then
-            die "Missing configuration file: $file"
+        if [[ ! -f "$file" || -L "$file" ]]; then
+            die "Missing or unsafe configuration file: $file"
         fi
 
         source "$file"

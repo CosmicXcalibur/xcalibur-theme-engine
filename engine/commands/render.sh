@@ -6,9 +6,9 @@
 
 command_render() {
 
-    local module="$1"
+    local module="${1:-}"
 
-    if [[ -z "$module" ]]; then
+    if [[ "$#" -ne 1 || -z "$module" ]]; then
         echo "Usage:"
         echo "    theme render <module>"
         return 1

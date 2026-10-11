@@ -9,9 +9,11 @@ command_theme() {
 
     case "$subcommand" in
         list)
+            [[ "$#" -eq 1 ]] || { log_error "Usage: theme list"; return 1; }
             theme_list
             ;;
         current)
+            [[ "$#" -eq 1 ]] || { log_error "Usage: theme current"; return 1; }
             theme_current
             ;;
         set)
@@ -41,14 +43,22 @@ theme_set() {
     local theme_dir="$THEMES_DIR/$theme_id"
     local previous_theme_file=""
     local had_previous_theme=false
+    local previous_colors_file=""
+    local had_previous_colors=false
 
     if ! theme_id_validate "$theme_id"; then
         log_error "Invalid theme ID: $theme_id"
         return 1
     fi
 
-    if [[ ! -d "$theme_dir" ]]; then
+    if [[ ! -d "$theme_dir" || -L "$theme_dir" ]]; then
         log_error "Theme '$theme_id' is not installed."
+        return 1
+    fi
+
+    if ! theme_install_root_file_validate "$theme_dir/theme.conf" ||
+       ! theme_install_root_file_validate "$theme_dir/palette.conf"; then
+        log_error "Theme '$theme_id' must contain regular manifest and palette files."
         return 1
     fi
 
@@ -82,8 +92,20 @@ theme_set() {
         had_previous_theme=true
     fi
 
+    if [[ -f "$RUNTIME_COLORS" ]]; then
+        if ! previous_colors_file="$(mktemp "$STATE_DIR/.colors.previous.XXXXXX")" ||
+           ! cp -- "$RUNTIME_COLORS" "$previous_colors_file"; then
+            [[ -z "$previous_theme_file" ]] || rm -f -- "$previous_theme_file"
+            [[ -z "$previous_colors_file" ]] || rm -f -- "$previous_colors_file"
+            log_error "Unable to back up runtime palette."
+            return 1
+        fi
+        had_previous_colors=true
+    fi
+
     if ! theme_write_current_state "$theme_id"; then
         [[ -z "$previous_theme_file" ]] || rm -f -- "$previous_theme_file"
+        [[ -z "$previous_colors_file" ]] || rm -f -- "$previous_colors_file"
         log_error "Unable to write current theme state."
         return 1
     fi
@@ -91,21 +113,36 @@ theme_set() {
     log_success "Theme selected: $theme_id"
 
     if ! theme_apply; then
-        if [[ "$had_previous_theme" == true ]]; then
-            if ! mv -f -- "$previous_theme_file" "$CURRENT_THEME_FILE"; then
-                log_error "Unable to restore previous theme state."
+        if [[ "$THEME_APPLY_PHASE" == generate || "$THEME_APPLY_PHASE" == render ]]; then
+            if [[ "$had_previous_theme" == true ]]; then
+                if ! mv -f -- "$previous_theme_file" "$CURRENT_THEME_FILE"; then
+                    log_error "Unable to restore previous theme state."
+                    return 1
+                fi
+            elif ! rm -f "$CURRENT_THEME_FILE"; then
+                log_error "Unable to remove current theme state."
                 return 1
             fi
-        elif ! rm -f "$CURRENT_THEME_FILE"; then
-            log_error "Unable to remove current theme state."
-            return 1
+            if [[ "$had_previous_colors" == true ]]; then
+                if ! mv -f -- "$previous_colors_file" "$RUNTIME_COLORS"; then
+                    log_error "Unable to restore previous runtime palette."
+                    return 1
+                fi
+            else
+                rm -f -- "$RUNTIME_COLORS" || return 1
+            fi
+        else
+            log_warn "Selection remains '$theme_id' because some application files may have changed."
         fi
 
         log_error "Unable to apply theme '$theme_id'."
+        [[ -z "$previous_theme_file" ]] || rm -f -- "$previous_theme_file"
+        [[ -z "$previous_colors_file" ]] || rm -f -- "$previous_colors_file"
         return 1
     fi
 
     [[ -z "$previous_theme_file" ]] || rm -f -- "$previous_theme_file"
+    [[ -z "$previous_colors_file" ]] || rm -f -- "$previous_colors_file"
 }
 
 theme_write_current_state() {
@@ -134,12 +171,13 @@ theme_list() {
     echo
 
     for theme_dir in "$THEMES_DIR"/*; do
-        [[ -d "$theme_dir" ]] || continue
+        [[ -d "$theme_dir" && ! -L "$theme_dir" ]] || continue
 
         local manifest="$theme_dir/theme.conf"
 
-        if [[ ! -f "$manifest" ]]; then
-            log_warn "Skipping $(basename "$theme_dir"): missing theme.conf"
+        if ! theme_install_root_file_validate "$manifest" ||
+           ! theme_install_root_file_validate "$theme_dir/palette.conf"; then
+            log_warn "Skipping $(basename "$theme_dir"): missing or unsafe theme files"
             continue
         fi
 
@@ -187,7 +225,9 @@ theme_current() {
 
     local manifest="$THEMES_DIR/$theme_id/theme.conf"
 
-    if [[ ! -f "$manifest" ]]; then
+    if [[ -L "$THEMES_DIR/$theme_id" ]] ||
+       ! theme_install_root_file_validate "$manifest" ||
+       ! theme_install_root_file_validate "$THEMES_DIR/$theme_id/palette.conf"; then
         log_warn "Current theme '$theme_id' is not installed."
         return 1
     fi

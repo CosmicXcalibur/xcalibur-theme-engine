@@ -17,6 +17,7 @@ Commands:
     current
     set <theme-id>
     install <owner/repo>
+    import analyze <owner/repo|github-url>
 EOF
 
 }

@@ -5,8 +5,7 @@
 # ==========================================================
 
 hyprlock_reload() {
-
-    if pgrep -x hyprlock >/dev/null 2>&1; then
-        pkill -x hyprlock
-    fi
+    # Hyprlock reads its configuration on the next launch. Never terminate an
+    # active lock session just to refresh colors.
+    return 0
 }

@@ -5,7 +5,7 @@ command_palette() {
     case "${1:-help}" in
 
         generate)
-
+            [[ "$#" -eq 1 ]] || { log_error "Usage: theme palette generate"; return 1; }
             color_generate
             ;;
 
@@ -15,8 +15,9 @@ command_palette() {
             ;;
 
         *)
-
+            log_error "Unknown palette command: ${1:-}"
             palette_help
+            return 1
             ;;
 
     esac

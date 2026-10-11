@@ -9,13 +9,15 @@ hyprlock_install() {
     local target="$HOME/.config/hypr/hyprlock.conf"
     local backup="$HOME/.config/hypr/hyprlock.conf.xcalibur-backup"
 
-    mkdir -p "$HOME/.config/hypr"
+    [[ ! -L "$target" && ! -L "$backup" ]] || return 1
+    fs_directory_safe "$HOME/.config/hypr" true || return 1
 
     if [[ -f "$target" && ! -f "$backup" ]]; then
-        cp "$target" "$backup"
+        [[ ! -e "$backup" ]] || return 1
+        fs_install_atomic "$target" "$backup" || return 1
     fi
 
-    install -m 644 \
+    fs_install_atomic \
         "$GENERATED_DIR/hyprlock.conf" \
         "$target"
 }
