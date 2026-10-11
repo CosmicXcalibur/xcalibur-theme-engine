@@ -21,14 +21,14 @@ hyprlock_apply() {
 
     log_info "Applying Hyprlock theme..."
 
-    hyprlock_render
+    hyprlock_render || return 1
 
     if [[ ! -f "$GENERATED_DIR/hyprlock.conf" ]]; then
         log_error "Failed to generate Hyprlock configuration."
         return 1
     fi
 
-    hyprlock_install
+    hyprlock_install || return 1
 
     log_success "Hyprlock theme installed."
 }

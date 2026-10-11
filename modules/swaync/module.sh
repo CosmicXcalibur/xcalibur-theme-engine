@@ -16,12 +16,8 @@ swaync_apply() {
 
     log_info "Applying SwayNC theme..."
 
-    swaync_render
-
-    swaync_install
-
-    if ! swaync_reload; then
-        log_warn "SwayNC configuration installed, but live reload failed."
-    fi
+    swaync_render || return 1
+    swaync_install || return 1
+    swaync_reload
 
 }

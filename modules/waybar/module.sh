@@ -10,12 +10,8 @@ waybar_render() {
 
 waybar_apply() {
 
-    waybar_render
-
-    waybar_install
-
-    if ! waybar_reload; then
-        log_warn "Waybar configuration installed, but live reload failed."
-    fi
+    waybar_render || return 1
+    waybar_install || return 1
+    waybar_reload
 
 }

@@ -34,8 +34,9 @@ theme_manifest_load() {
     THEME_AUTHOR=""
     THEME_DESCRIPTION=""
 
-    if [[ ! -f "$manifest" ]]; then
-        theme_manifest_fail "missing theme.conf"
+    if [[ ! -f "$manifest" || -L "$manifest" ]] ||
+       [[ "$(stat -c %s -- "$manifest")" -gt 262144 ]]; then
+        theme_manifest_fail "missing, unsafe, or oversized theme.conf"
         return 1
     fi
 
@@ -130,6 +131,11 @@ theme_manifest_load() {
 
     if ! theme_id_validate "$THEME_ID"; then
         theme_manifest_fail "invalid THEME_ID: $THEME_ID"
+        return 1
+    fi
+
+    if [[ ! "$THEME_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+([-.][A-Za-z0-9.-]+)?$ ]]; then
+        theme_manifest_fail "invalid THEME_VERSION: $THEME_VERSION"
         return 1
     fi
 

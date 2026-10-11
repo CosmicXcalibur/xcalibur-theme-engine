@@ -78,22 +78,26 @@ main() {
     case "${1:-help}" in
 
         help|-h|--help)
+            [[ "$#" -le 1 ]] || { log_error "Usage: theme help"; return 2; }
             command_help
             ;;
 
         version|-v|--version)
+            [[ "$#" -eq 1 ]] || { log_error "Usage: theme version"; return 2; }
             command_version
             ;;
 
         status)
+            [[ "$#" -eq 1 ]] || { log_error "Usage: theme status"; return 2; }
             command_status
             ;;
 
-        list|install|set|remove|current)
+        list|install|set|current)
             command_theme "$@"
             ;;
 
         doctor)
+            [[ "$#" -eq 1 ]] || { log_error "Usage: theme doctor"; return 2; }
             command_doctor
             ;;
 
@@ -121,7 +125,7 @@ main() {
             log_error "Unknown command: ${1:-}"
             echo
             command_help
-            exit 1
+            return 2
             ;;
 
     esac

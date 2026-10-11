@@ -5,21 +5,22 @@ command_wallpaper() {
     case "${1:-help}" in
 
         help)
+            [[ "$#" -le 1 ]] || { log_error "Usage: theme wallpaper help"; return 2; }
             wallpaper_help
             ;;
 
         current)
-            [[ "$#" -eq 1 ]] || { log_error "Usage: theme wallpaper current"; return 1; }
+            [[ "$#" -eq 1 ]] || { log_error "Usage: theme wallpaper current"; return 2; }
             wallpaper_current
             ;;
 
         list)
-            [[ "$#" -eq 1 ]] || { log_error "Usage: theme wallpaper list"; return 1; }
+            [[ "$#" -eq 1 ]] || { log_error "Usage: theme wallpaper list"; return 2; }
             wallpaper_list
             ;;
 
         random)
-            [[ "$#" -eq 1 ]] || { log_error "Usage: theme wallpaper random"; return 1; }
+            [[ "$#" -eq 1 ]] || { log_error "Usage: theme wallpaper random"; return 2; }
             wallpaper_random
             ;;
 
@@ -31,7 +32,7 @@ command_wallpaper() {
         *)
             log_error "Unknown wallpaper command: ${1:-}"
             wallpaper_help
-            return 1
+            return 2
             ;;
     esac
 

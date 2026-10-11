@@ -38,12 +38,47 @@ source "$ROOT/engine/renderer/template.sh"
 source "$ROOT/engine/services/apply.sh"
 source "$ROOT/engine/services/wallpaper.sh"
 source "$ROOT/engine/commands/theme.sh"
+source "$ROOT/engine/commands/status.sh"
 source "$ROOT/modules/kitty/reload.sh"
 source "$ROOT/modules/waybar/reload.sh"
 source "$ROOT/modules/swaync/reload.sh"
 source "$ROOT/modules/hyprlock/reload.sh"
+source "$ROOT/modules/wofi/reload.sh"
+source "$ROOT/modules/gtk/reload.sh"
 CWAL_COLORS="$TEST_TMP/cwal.sh"
 RUNTIME_COLORS="$GENERATED_DIR/colors.sh"
+WALLPAPER_BACKEND=unsupported
+expect_failure 'unsupported wallpaper backend' wallpaper_reload "$TEST_TMP/unused.png"
+unset WALLPAPER_BACKEND
+
+mkdir -p "$TEST_TMP/validate/xcalibur-test"
+cp -- "$ROOT/themes/xcalibur-test/theme.conf" "$ROOT/themes/xcalibur-test/palette.conf" \
+    "$TEST_TMP/validate/xcalibur-test/"
+theme_manifest_load "$TEST_TMP/validate/xcalibur-test/theme.conf" xcalibur-test
+theme_definition_load "$TEST_TMP/validate/xcalibur-test/palette.conf" xcalibur-test
+sed -i 's/THEME_VERSION=1.0.0/THEME_VERSION=invalid/' "$TEST_TMP/validate/xcalibur-test/theme.conf"
+expect_failure 'invalid theme version' theme_manifest_load "$TEST_TMP/validate/xcalibur-test/theme.conf" xcalibur-test
+cp -- "$ROOT/themes/xcalibur-test/theme.conf" "$TEST_TMP/validate/xcalibur-test/theme.conf"
+printf 'ACCENT=#123456\n' >> "$TEST_TMP/validate/xcalibur-test/palette.conf"
+expect_failure 'duplicate palette role' theme_definition_load "$TEST_TMP/validate/xcalibur-test/palette.conf" xcalibur-test
+cp -- "$ROOT/themes/xcalibur-test/palette.conf" "$TEST_TMP/validate/xcalibur-test/palette.conf"
+sed -i 's/ACCENT=COLOR6/ACCENT=not-a-color/' "$TEST_TMP/validate/xcalibur-test/palette.conf"
+expect_failure 'invalid palette color' theme_definition_load "$TEST_TMP/validate/xcalibur-test/palette.conf" xcalibur-test
+head -c 262145 /dev/zero > "$TEST_TMP/validate/xcalibur-test/palette.conf"
+expect_failure 'oversized native palette' theme_definition_load "$TEST_TMP/validate/xcalibur-test/palette.conf" xcalibur-test
+printf 'invalid id\n' > "$CURRENT_THEME_FILE"
+THEME_ROOT="$ROOT"
+expect_failure 'malformed status state' command_status
+rm -f -- "$CURRENT_THEME_FILE"
+saved_themes_dir="$THEMES_DIR"
+THEMES_DIR="$TEST_TMP/missing-themes"
+expect_failure 'missing themes directory' theme_list
+THEMES_DIR="$saved_themes_dir"
+mkdir -p "$THEMES_DIR/broken"
+printf 'bad data\n' > "$THEMES_DIR/broken/theme.conf"
+printf 'XCALIBUR_DEFINITION_VERSION=1\n' > "$THEMES_DIR/broken/palette.conf"
+[[ "$(theme_list 2>&1)" == *'Skipping broken'* ]]
+rm -rf -- "$THEMES_DIR/broken"
 
 {
     printf "background='#010203'\nforeground='#eeeeee'\ncursor='#ffffff'\n"
@@ -142,6 +177,11 @@ config_load_fixture() (
 )
 expect_failure 'symlinked trusted configuration' config_load_fixture
 [[ ! -e "$TEST_TMP/config-executed" ]]
+rm -f -- "$TEST_TMP/config-root/config/theme.conf"
+cp -- "$ROOT/config/"* "$TEST_TMP/config-root/config/"
+printf 'touch "%s"\n' "$TEST_TMP/config-executed" >> "$TEST_TMP/config-root/config/theme.conf"
+expect_failure 'configuration code is not executed' config_load_fixture
+[[ ! -e "$TEST_TMP/config-executed" ]]
 mkdir -p "$TEST_TMP/untrusted-modules/module"
 printf 'touch "%s"\n' "$TEST_TMP/module-executed" > "$TEST_TMP/untrusted-modules/module/module.sh"
 module_load_fixture() (
@@ -156,6 +196,19 @@ kitty_reload
 waybar_reload
 swaync_reload
 hyprlock_reload
+pgrep() { return 0; }
+reload_log="$TEST_TMP/reload.log"
+pkill() { printf 'pkill %s\n' "$*" >> "$reload_log"; }
+swaync-client() { printf 'swaync-client %s\n' "$*" >> "$reload_log"; }
+waybar_reload
+swaync_reload
+wofi_reload
+gtk_reload
+[[ "$(cat "$reload_log")" == $'pkill -USR2 -x waybar\nswaync-client -rs' ]]
+pkill() { return 1; }
+expect_failure 'Waybar signal failure' waybar_reload
+unset -f pkill swaync-client
+pgrep() { return 1; }
 [[ ! -e "$TEST_TMP/executed" ]]
 color_data_read "$RUNTIME_COLORS" runtime
 [[ "${COLOR_DATA[COLOR15]}" == '#00000f' ]]
@@ -199,6 +252,35 @@ PY
 expect_failure 'invalid CWAL data' color_export
 [[ ! -e "$TEST_TMP/executed" ]]
 
+mkdir -p "$TEST_TMP/cwal-bin"
+cat > "$TEST_TMP/cwal-bin/cwal" <<'MOCK_CWAL'
+#!/usr/bin/env bash
+[[ "$*" == *'--no-reload --out-dir '* ]] || exit 88
+[[ "$XDG_CONFIG_HOME" == */config ]] || exit 89
+[[ "$CWAL_TEST_MODE" != fail ]] || exit 7
+out="${@: -1}"
+{
+    printf "background='#010203'\nforeground='#eeeeee'\ncursor='#ffffff'\n"
+    for n in {0..15}; do printf "color%d='#%06x'\n" "$n" "$n"; done
+} > "$out/colors.sh"
+MOCK_CWAL
+chmod +x "$TEST_TMP/cwal-bin/cwal"
+PATH="$TEST_TMP/cwal-bin:$PATH"
+export PATH
+CACHE_DIR="$TEST_TMP/cache"
+COLOR_ENGINE=unsupported
+expect_failure 'unsupported color engine' color_generate
+unset COLOR_ENGINE
+CWAL_TEST_MODE=ok
+export CWAL_TEST_MODE
+color_generate
+[[ "${COLOR_DATA[COLOR15]}" == '#00000f' ]]
+cp -- "$RUNTIME_COLORS" "$TEST_TMP/palette-before-cwal-failure"
+CWAL_TEST_MODE=fail
+expect_failure 'CWAL failure preserves runtime palette' color_generate
+cmp -s "$RUNTIME_COLORS" "$TEST_TMP/palette-before-cwal-failure"
+[[ -z "$(find "$CACHE_DIR" -mindepth 1 -print -quit)" ]]
+
 mkdir -p "$MODULES_DIR/alpha" "$MODULES_DIR/beta"
 ALPHA_ENABLED=true BETA_ENABLED=true
 phase_log="$TEST_TMP/phases"
@@ -217,6 +299,38 @@ alpha_install() { printf 'alpha install\n' >> "$phase_log"; return 1; }
 expect_failure 'module install failure' theme_apply
 [[ "$THEME_APPLY_PHASE" == install ]]
 
+mkdir -p "$MODULES_DIR/kitty" "$TEST_TMP/transaction-home/.config/kitty"
+printf 'original\n' > "$TEST_TMP/transaction-home/.config/kitty/current-theme.conf"
+chmod 600 "$TEST_TMP/transaction-home/.config/kitty/current-theme.conf"
+original_home="$HOME"
+HOME="$TEST_TMP/transaction-home"
+ALPHA_ENABLED=false BETA_ENABLED=false KITTY_ENABLED=true
+kitty_render() { printf 'rendered kitty\n' > "$GENERATED_DIR/kitty.conf"; }
+kitty_install() { printf 'replacement\n' > "$HOME/.config/kitty/current-theme.conf"; }
+kitty_reload() { return 1; }
+expect_failure 'reload failure restores installed file' theme_apply
+[[ "$(cat "$HOME/.config/kitty/current-theme.conf")" == original ]]
+[[ "$(stat -c %a "$HOME/.config/kitty/current-theme.conf")" == 600 ]]
+kitty_reload() { :; }
+fail_state_commit() { return 1; }
+THEME_APPLY_COMMIT=fail_state_commit
+expect_failure 'state commit failure restores installed file' theme_apply
+[[ "$(cat "$HOME/.config/kitty/current-theme.conf")" == original ]]
+[[ "$THEME_APPLY_PHASE" == state ]]
+unset THEME_APPLY_COMMIT
+TMPDIR="$TEST_TMP"
+export TMPDIR
+kitty_reload() { return 1; }
+install() { return 1; }
+expect_failure 'incomplete rollback retains recovery snapshots' theme_apply
+[[ "$(cat "$EXPECTED_FAILURE_LOG")" == *'Rollback snapshots were retained for manual recovery:'* ]]
+recovery_dir="$(find "$TEST_TMP" -maxdepth 1 -type d -name 'xcalibur-rollback.*' -print -quit)"
+[[ -n "$recovery_dir" && -f "$recovery_dir/0" ]]
+unset -f install
+rm -rf -- "$recovery_dir"
+HOME="$original_home"
+KITTY_ENABLED=false
+
 WALLPAPER_DIR="$TEST_TMP/wallpapers"
 mkdir -p "$WALLPAPER_DIR"
 touch "$WALLPAPER_DIR/a space.png"
@@ -227,11 +341,14 @@ expect_failure 'wallpaper reload failure' wallpaper_set "$WALLPAPER_DIR/a space.
 wallpaper_reload() { :; }
 theme_apply() { return 1; }
 expect_failure 'wallpaper apply failure' wallpaper_set "$WALLPAPER_DIR/a space.png"
-[[ "$(cat "$STATE_DIR/current_wallpaper")" == "$WALLPAPER_DIR/a space.png" ]]
+[[ ! -e "$STATE_DIR/current_wallpaper" ]]
 
 mkdir -p "$THEMES_DIR/xcalibur-test"
 cp "$ROOT/themes/xcalibur-test/"* "$THEMES_DIR/xcalibur-test/"
-printf 'xcalibur-test\n' > "$CURRENT_THEME_FILE"
+mkdir -p "$THEMES_DIR/prior"
+sed 's/THEME_ID=xcalibur-test/THEME_ID=prior/' "$ROOT/themes/xcalibur-test/theme.conf" > "$THEMES_DIR/prior/theme.conf"
+cp -- "$ROOT/themes/xcalibur-test/palette.conf" "$THEMES_DIR/prior/palette.conf"
+printf 'prior\n' > "$CURRENT_THEME_FILE"
 cp "$RUNTIME_COLORS" "$TEST_TMP/previous-colors"
 theme_apply() {
     THEME_APPLY_PHASE=render
@@ -240,7 +357,7 @@ theme_apply() {
 }
 expect_failure 'theme selection rollback' theme_set set xcalibur-test
 cmp -s "$RUNTIME_COLORS" "$TEST_TMP/previous-colors"
-[[ "$(cat "$CURRENT_THEME_FILE")" == xcalibur-test ]]
+[[ "$(cat "$CURRENT_THEME_FILE")" == prior ]]
 
 mkdir -p "$TEST_TMP/native-fixture"
 cp "$ROOT/themes/xcalibur-test/theme.conf" "$ROOT/themes/xcalibur-test/palette.conf" "$TEST_TMP/native-fixture/"
@@ -255,6 +372,7 @@ git() {
     mkdir -p "$destination"
     cp "$TEST_TMP/native-fixture/"* "$destination/"
 }
+timeout() { local duration="$1"; shift; "$@"; }
 theme_install install owner/repo
 [[ -f "$THEMES_DIR/xcalibur-test/theme.conf" ]]
 expect_failure 'existing native theme' theme_install install owner/repo
@@ -287,6 +405,7 @@ expect_failure 'native copy failure rolls back' theme_install install owner/repo
 [[ ! -e "$THEMES_DIR/xcalibur-test" ]]
 [[ -z "$(find "$TMPDIR" -mindepth 1 -print -quit)" ]]
 unset -f cp
+unset -f timeout
 
 mkdir -p "$TEST_TMP/repo/dotfiles/kitty" "$TEST_TMP/repo/waybar"
 printf 'background #112233\nforeground #eeeeee\ncolor4 #778899\n' > "$TEST_TMP/repo/dotfiles/kitty/colors.conf"
@@ -330,6 +449,9 @@ case "$operation" in
     clone)
         mkdir -p "${@: -1}"
         [[ "$IMPORT_GIT_MODE" != clone-fail ]] || exit 11
+        if [[ "$IMPORT_GIT_MODE" == fixture ]]; then
+            cp -a -- "$IMPORT_FIXTURE/." "${@: -1}/"
+        fi
         ;;
     rev-parse)
         [[ "$IMPORT_GIT_MODE" != revision-fail ]] || exit 12
@@ -343,6 +465,9 @@ PATH="$TEST_TMP/mock-bin:$PATH"
 TMPDIR="$TEST_TMP/import-stage"
 IMPORT_GIT_LOG="$TEST_TMP/import-git.log"
 export PATH TMPDIR IMPORT_GIT_LOG
+expect_failure 'invalid GitHub URL' command_import analyze https://example.invalid/owner/repo
+expect_failure 'unsafe GitHub revision' command_import analyze https://github.com/owner/repo?ref=main
+[[ ! -s "$IMPORT_GIT_LOG" ]]
 import_staging_empty() {
     [[ -z "$(find "$TMPDIR" -mindepth 1 -print -quit)" ]]
 }
@@ -350,6 +475,14 @@ IMPORT_GIT_MODE=clone-fail
 export IMPORT_GIT_MODE
 expect_failure 'failed clone cleans staging' command_import analyze owner/repo
 import_staging_empty
+timeout() {
+    [[ "$IMPORT_GIT_MODE" != timeout ]] || return 124
+    command timeout "$@"
+}
+IMPORT_GIT_MODE=timeout
+expect_failure 'clone timeout cleans staging' command_import analyze owner/repo
+import_staging_empty
+unset -f timeout
 [[ "$(cat "$EXPECTED_FAILURE_LOG")" == *'Unable to retrieve GitHub repository: owner/repo'* ]]
 IMPORT_GIT_MODE=revision-fail
 expect_failure 'failed revision lookup cleans staging' command_import analyze owner/repo
@@ -381,5 +514,38 @@ expect_failure 'cleanup error returns failure' command_import analyze owner/repo
 [[ "$(cat "$EXPECTED_FAILURE_LOG")" == *'Unable to remove import staging directory:'* ]]
 unset -f rm
 rm -rf -- "$TEST_TMP/import-stage"
+mkdir -p "$TEST_TMP/import-stage"
+
+mkdir -p "$TEST_TMP/convert-fixture"
+printf 'background #112233\nforeground #eeeeee\n' > "$TEST_TMP/convert-fixture/kitty.conf"
+IMPORT_FIXTURE="$TEST_TMP/convert-fixture"
+IMPORT_GIT_MODE=fixture
+export IMPORT_FIXTURE IMPORT_GIT_MODE
+command_import preview owner/repo > "$TEST_TMP/preview.txt"
+[[ "$(cat "$TEST_TMP/preview.txt")" == *'Planned theme ID: owner-repo'* ]]
+[[ ! -e "$TEST_TMP/converted pack" ]]
+command_import convert owner/repo "$TEST_TMP/converted pack" > "$TEST_TMP/convert-output.txt"
+[[ -f "$TEST_TMP/converted pack/theme.conf" ]]
+[[ -f "$TEST_TMP/converted pack/palette.conf" ]]
+expect_failure 'conversion collision' command_import convert owner/repo "$TEST_TMP/converted pack"
+python3() {
+    if [[ "$1" == "$ROOT/engine/importer/convert.py" && "$2" == convert ]]; then
+        mkdir -p -- "$4"
+        printf 'THEME_ID=invalid\n' > "$4/theme.conf"
+        printf 'XCALIBUR_DEFINITION_VERSION=1\n' > "$4/palette.conf"
+        return 0
+    fi
+    command python3 "$@"
+}
+expect_failure 'invalid converted pack rejected and removed' command_import convert owner/repo "$TEST_TMP/invalid-converted-pack"
+[[ ! -e "$TEST_TMP/invalid-converted-pack" ]]
+unset -f python3
+THEME_ROOT="$TEST_TMP/converted-install-root"
+THEMES_DIR="$THEME_ROOT/themes"
+mkdir -p "$THEME_ROOT"
+command_import install "$TEST_TMP/converted pack"
+[[ -f "$THEMES_DIR/owner-repo/palette.conf" ]]
+expect_failure 'import install collision' command_import install "$TEST_TMP/converted pack"
+[[ -z "$(find "$TMPDIR" -mindepth 1 -print -quit)" ]]
 
 echo 'All isolated tests passed.'

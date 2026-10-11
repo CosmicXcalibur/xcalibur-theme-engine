@@ -9,11 +9,11 @@ command_theme() {
 
     case "$subcommand" in
         list)
-            [[ "$#" -eq 1 ]] || { log_error "Usage: theme list"; return 1; }
+            [[ "$#" -eq 1 ]] || { log_error "Usage: theme list"; return 2; }
             theme_list
             ;;
         current)
-            [[ "$#" -eq 1 ]] || { log_error "Usage: theme current"; return 1; }
+            [[ "$#" -eq 1 ]] || { log_error "Usage: theme current"; return 2; }
             theme_current
             ;;
         set)
@@ -28,7 +28,7 @@ command_theme() {
             echo "    theme current"
             echo "    theme set <theme-id>"
             echo "    theme install <owner/repo>"
-            return 1
+            return 2
             ;;
     esac
 }
@@ -36,18 +36,21 @@ command_theme() {
 theme_set() {
     if [[ "$#" -ne 2 ]]; then
         log_error "Usage: theme set <theme-id>"
-        return 1
+        return 2
     fi
 
     local theme_id="$2"
     local theme_dir="$THEMES_DIR/$theme_id"
-    local previous_theme_file=""
-    local had_previous_theme=false
     local previous_colors_file=""
     local had_previous_colors=false
 
     if ! theme_id_validate "$theme_id"; then
         log_error "Invalid theme ID: $theme_id"
+        return 2
+    fi
+
+    if ! fs_directory_safe "$THEMES_DIR" false; then
+        log_error "Unsafe themes directory: $THEMES_DIR"
         return 1
     fi
 
@@ -72,30 +75,14 @@ theme_set() {
         return 1
     fi
 
-    if ! mkdir -p "$STATE_DIR"; then
+    if ! fs_directory_safe "$STATE_DIR" true || [[ -L "$CURRENT_THEME_FILE" ]]; then
         log_error "Unable to create state directory: $STATE_DIR"
         return 1
-    fi
-
-    if [[ -f "$CURRENT_THEME_FILE" ]]; then
-        if ! previous_theme_file="$(mktemp "$STATE_DIR/.current_theme.previous.XXXXXX")"; then
-            log_error "Unable to create current theme backup."
-            return 1
-        fi
-
-        if ! cp -- "$CURRENT_THEME_FILE" "$previous_theme_file"; then
-            rm -f -- "$previous_theme_file"
-            log_error "Unable to back up current theme state."
-            return 1
-        fi
-
-        had_previous_theme=true
     fi
 
     if [[ -f "$RUNTIME_COLORS" ]]; then
         if ! previous_colors_file="$(mktemp "$STATE_DIR/.colors.previous.XXXXXX")" ||
            ! cp -- "$RUNTIME_COLORS" "$previous_colors_file"; then
-            [[ -z "$previous_theme_file" ]] || rm -f -- "$previous_theme_file"
             [[ -z "$previous_colors_file" ]] || rm -f -- "$previous_colors_file"
             log_error "Unable to back up runtime palette."
             return 1
@@ -103,53 +90,40 @@ theme_set() {
         had_previous_colors=true
     fi
 
-    if ! theme_write_current_state "$theme_id"; then
-        [[ -z "$previous_theme_file" ]] || rm -f -- "$previous_theme_file"
-        [[ -z "$previous_colors_file" ]] || rm -f -- "$previous_colors_file"
-        log_error "Unable to write current theme state."
-        return 1
-    fi
-
-    log_success "Theme selected: $theme_id"
-
+    THEME_CANDIDATE_ID="$theme_id"
+    THEME_APPLY_COMMIT=theme_set_commit_state
     if ! theme_apply; then
-        if [[ "$THEME_APPLY_PHASE" == generate || "$THEME_APPLY_PHASE" == render ]]; then
-            if [[ "$had_previous_theme" == true ]]; then
-                if ! mv -f -- "$previous_theme_file" "$CURRENT_THEME_FILE"; then
-                    log_error "Unable to restore previous theme state."
-                    return 1
-                fi
-            elif ! rm -f "$CURRENT_THEME_FILE"; then
-                log_error "Unable to remove current theme state."
+        unset THEME_CANDIDATE_ID THEME_APPLY_COMMIT
+        if [[ "$had_previous_colors" == true ]]; then
+            if ! mv -f -- "$previous_colors_file" "$RUNTIME_COLORS"; then
+                log_error "Unable to restore previous runtime palette; backup remains at $previous_colors_file"
                 return 1
             fi
-            if [[ "$had_previous_colors" == true ]]; then
-                if ! mv -f -- "$previous_colors_file" "$RUNTIME_COLORS"; then
-                    log_error "Unable to restore previous runtime palette."
-                    return 1
-                fi
-            else
-                rm -f -- "$RUNTIME_COLORS" || return 1
-            fi
         else
-            log_warn "Selection remains '$theme_id' because some application files may have changed."
+            rm -f -- "$RUNTIME_COLORS" || return 1
         fi
 
         log_error "Unable to apply theme '$theme_id'."
-        [[ -z "$previous_theme_file" ]] || rm -f -- "$previous_theme_file"
         [[ -z "$previous_colors_file" ]] || rm -f -- "$previous_colors_file"
         return 1
     fi
 
-    [[ -z "$previous_theme_file" ]] || rm -f -- "$previous_theme_file"
+    unset THEME_CANDIDATE_ID THEME_APPLY_COMMIT
+    log_success "Theme selected: $theme_id"
+
     [[ -z "$previous_colors_file" ]] || rm -f -- "$previous_colors_file"
+}
+
+theme_set_commit_state() {
+    theme_write_current_state "$THEME_CANDIDATE_ID"
 }
 
 theme_write_current_state() {
     local theme_id="$1"
     local state_file
 
-    if ! state_file="$(mktemp "$STATE_DIR/.current_theme.XXXXXX")"; then
+    if ! fs_directory_safe "$STATE_DIR" true || [[ -L "$CURRENT_THEME_FILE" ]] ||
+       ! state_file="$(mktemp "$STATE_DIR/.current_theme.XXXXXX")"; then
         return 1
     fi
 
@@ -166,6 +140,12 @@ theme_write_current_state() {
 
 theme_list() {
     local found=false
+
+    if [[ ! -d "$THEMES_DIR" ]]; then
+        log_warn "Themes directory is missing: $THEMES_DIR"
+        return 1
+    fi
+    fs_directory_safe "$THEMES_DIR" false || { log_error "Unsafe themes directory: $THEMES_DIR"; return 1; }
 
     echo "Installed themes:"
     echo
@@ -205,6 +185,11 @@ theme_list() {
 }
 
 theme_current() {
+    if [[ -L "$CURRENT_THEME_FILE" ]]; then
+        log_warn "Current theme state is a symlink."
+        return 1
+    fi
+
     if [[ ! -f "$CURRENT_THEME_FILE" ]]; then
         echo "No theme is currently selected."
         return 0
@@ -224,6 +209,8 @@ theme_current() {
     fi
 
     local manifest="$THEMES_DIR/$theme_id/theme.conf"
+
+    fs_directory_safe "$THEMES_DIR" false || { log_error "Unsafe themes directory: $THEMES_DIR"; return 1; }
 
     if [[ -L "$THEMES_DIR/$theme_id" ]] ||
        ! theme_install_root_file_validate "$manifest" ||

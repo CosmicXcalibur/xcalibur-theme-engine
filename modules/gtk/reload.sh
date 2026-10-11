@@ -5,7 +5,7 @@
 # ==========================================================
 
 gtk_reload() {
-
-    gsettings set org.gnome.desktop.interface color-scheme 'prefer-dark' \
-        >/dev/null 2>&1 || true
+    # GTK loads this stylesheet when applications start; no global desktop
+    # preference needs to be changed by the theme engine.
+    return 0
 }

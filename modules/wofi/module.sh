@@ -14,12 +14,8 @@ wofi_render() {
 
 wofi_apply() {
 
-    wofi_render
-
-    wofi_install
-
-    if ! wofi_reload; then
-        log_warn "Wofi configuration installed, but live reload failed."
-    fi
+    wofi_render || return 1
+    wofi_install || return 1
+    wofi_reload
 
 }

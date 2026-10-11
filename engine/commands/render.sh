@@ -11,7 +11,7 @@ command_render() {
     if [[ "$#" -ne 1 || -z "$module" ]]; then
         echo "Usage:"
         echo "    theme render <module>"
-        return 1
+        return 2
     fi
 
     local fn="${module}_render"
@@ -23,7 +23,7 @@ command_render() {
         echo
         echo "No render function found:"
         echo "    $fn"
-        return 1
+        return 2
     fi
 
 }

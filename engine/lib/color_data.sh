@@ -9,6 +9,8 @@ color_data_read() {
     local -A seen=()
     COLOR_DATA=()
     [[ -f "$file" && ! -L "$file" ]] || return 1
+    [[ "$(stat -c %s -- "$file")" -le 1048576 ]] || return 1
+    fs_directory_safe "$(dirname "$file")" false || return 1
 
     while IFS= read -r line || [[ -n "$line" ]]; do
         if [[ "$format" == cwal ]]; then

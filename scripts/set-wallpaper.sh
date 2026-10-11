@@ -1,18 +1,9 @@
 #!/usr/bin/env bash
 
-set -e
-
-WALL="$1"
-
-if [[ ! -f "$WALL" ]]; then
-    echo "Wallpaper not found."
-    exit 1
+set -Eeuo pipefail
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+if [[ "$#" -ne 1 ]]; then
+    printf 'Usage: set-wallpaper.sh <wallpaper>\n' >&2
+    exit 2
 fi
-
-echo "$WALL" > ~/.config/theme/current
-
-hyprctl hyprpaper unload all >/dev/null 2>&1 || true
-hyprctl hyprpaper preload "$WALL"
-hyprctl hyprpaper wallpaper ",$WALL"
-
-~/.config/theme/scripts/apply-theme.sh "$WALL"
+exec "$ROOT/engine/bin/theme" wallpaper set "$1"

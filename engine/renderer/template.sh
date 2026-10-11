@@ -10,13 +10,15 @@ render_template() {
     local template="$1" output="$2" line remaining rendered key tmp
 
     [[ -f "$template" && ! -L "$template" ]] || return 1
+    fs_directory_safe "$(dirname "$template")" false || return 1
     color_data_read "$RUNTIME_COLORS" runtime || {
         log_error "Runtime palette is invalid."
         return 1
     }
-    if [[ -f "$STATE_DIR/current_wallpaper" ]]; then
+    if [[ -n "${WALLPAPER_CANDIDATE:-}" || -f "$STATE_DIR/current_wallpaper" ]]; then
         local wallpaper_path
-        wallpaper_path="$(< "$STATE_DIR/current_wallpaper")"
+        wallpaper_path="${WALLPAPER_CANDIDATE:-}"
+        [[ -n "$wallpaper_path" ]] || wallpaper_path="$(< "$STATE_DIR/current_wallpaper")"
         if [[ -f "$wallpaper_path" && -r "$wallpaper_path" && ! "$wallpaper_path" =~ [[:cntrl:]] ]]; then
             COLOR_DATA[WALLPAPER]="$wallpaper_path"
         fi

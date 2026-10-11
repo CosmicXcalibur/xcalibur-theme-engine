@@ -34,14 +34,15 @@ color_resolve_theme_value() {
 
 color_apply_selected_theme_overlay() {
 
-    [[ -f "$CURRENT_THEME_FILE" ]] || return 0
+    [[ -n "${THEME_CANDIDATE_ID:-}" || -f "$CURRENT_THEME_FILE" ]] || return 0
 
     local theme_id
     local theme_dir
     local role
     local resolved
 
-    theme_id="$(< "$CURRENT_THEME_FILE")"
+    theme_id="${THEME_CANDIDATE_ID:-}"
+    [[ -n "$theme_id" ]] || theme_id="$(< "$CURRENT_THEME_FILE")"
 
     [[ -n "$theme_id" ]] || return 0
 
@@ -51,6 +52,11 @@ color_apply_selected_theme_overlay() {
     fi
 
     theme_dir="$THEMES_DIR/$theme_id"
+
+    fs_directory_safe "$THEMES_DIR" false || {
+        log_error "Unsafe themes directory: $THEMES_DIR"
+        return 1
+    }
 
     if [[ -L "$theme_dir" ]] ||
        ! theme_install_root_file_validate "$theme_dir/theme.conf" ||
@@ -104,28 +110,45 @@ color_generate() {
 
     log_info "Generating color palette..."
 
-    local wallpaper
+    if [[ "${COLOR_ENGINE:-cwal}" != cwal ]]; then
+        log_error "Unsupported color engine: ${COLOR_ENGINE:-}"
+        return 1
+    fi
 
-    if [[ ! -f "$STATE_DIR/current_wallpaper" ]]; then
+    local wallpaper stage old_cwal="$CWAL_COLORS" result=0
+
+    if [[ -z "${WALLPAPER_CANDIDATE:-}" &&
+          ( ! -f "$STATE_DIR/current_wallpaper" || -L "$STATE_DIR/current_wallpaper" ) ]]; then
         log_error "No current wallpaper selected."
         return 1
     fi
 
-    wallpaper="$(< "$STATE_DIR/current_wallpaper")"
+    wallpaper="${WALLPAPER_CANDIDATE:-}"
+    [[ -n "$wallpaper" ]] || wallpaper="$(< "$STATE_DIR/current_wallpaper")"
 
-    if [[ ! -f "$wallpaper" || ! -r "$wallpaper" || "$wallpaper" =~ [[:cntrl:]] ]]; then
+    if ! wallpaper_validate "$wallpaper"; then
         log_error "Current wallpaper not found."
         return 1
     fi
 
-    if ! cwal --img "$wallpaper" --no-reload; then
+    if ! cmd_exists cwal || ! cmd_exists timeout; then
+        log_error "Palette generation requires cwal and timeout."
+        return 1
+    fi
+    fs_directory_safe "$CACHE_DIR" true || return 1
+    stage="$(mktemp -d "$CACHE_DIR/.cwal.XXXXXX")" || return 1
+    mkdir -m 700 -- "$stage/config" || { rm -rf -- "$stage"; return 1; }
+    CWAL_COLORS="$stage/colors.sh"
+    if ! XDG_CONFIG_HOME="$stage/config" XDG_CACHE_HOME="$stage" \
+         timeout 30s cwal --img "$wallpaper" --no-reload --out-dir "$stage"; then
         log_error "Unable to generate cwal palette."
-        return 1
+        result=1
+    elif ! color_export; then
+        result=1
     fi
-
-    if ! color_export; then
-        return 1
-    fi
+    CWAL_COLORS="$old_cwal"
+    rm -rf -- "$stage" || result=1
+    ((result == 0)) || return 1
 
     log_success "Palette generated."
 }
@@ -146,6 +169,8 @@ color_export() {
         return 1
     fi
 
+    local wallpaper="${WALLPAPER_CANDIDATE:-}"
+    [[ -n "$wallpaper" ]] || wallpaper="$(< "$STATE_DIR/current_wallpaper")"
     local background="${COLOR_DATA[background]}"
     local foreground="${COLOR_DATA[foreground]}"
     local cursor="${COLOR_DATA[cursor]}"

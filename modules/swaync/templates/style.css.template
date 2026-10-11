@@ -97,7 +97,7 @@ blankwindow {
   border: var(--border);
   padding: 0;
   transition: var(--hover-tranistion);
-  background: rgba(var(--noti-bg), var(--noti-bg-alpha));
+  background: var(--noti-bg);
 }
 
 .notification-row .notification-background .notification.low {
@@ -217,7 +217,7 @@ blankwindow {
 
 .notification-row .notification-background .notification .notification-default-action .notification-content .inline-reply .inline-reply-button {
   margin-left: 4px;
-  background: rgba(var(--noti-bg), var(--noti-bg-alpha));
+  background: var(--noti-bg);
   border: var(--border);
   border-radius: var(--border-radius);
   color: var(--text-color);

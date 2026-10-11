@@ -23,9 +23,7 @@ gtk_apply() {
 
     log_info "Applying GTK theme..."
 
-    gtk_render
-
-    gtk_install
-
+    gtk_render || return 1
+    gtk_install || return 1
     gtk_reload
 }

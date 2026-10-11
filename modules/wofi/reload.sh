@@ -5,12 +5,7 @@
 # ==========================================================
 
 wofi_reload() {
-
-    if pgrep -x wofi >/dev/null 2>&1; then
-        if ! pkill -x wofi; then
-            log_warn "Unable to stop the running Wofi instance."
-            return 1
-        fi
-    fi
-
+    # Wofi reads style.css when launched. Closing an active launcher would
+    # discard the user's current interaction.
+    return 0
 }

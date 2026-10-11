@@ -58,8 +58,9 @@ theme_definition_load() {
     THEME_DEFINITION_ERROR=""
     THEME_DEFINITION_VALUES=()
 
-    if [[ ! -f "$definition" ]]; then
-        theme_definition_fail "missing palette.conf"
+    if [[ ! -f "$definition" || -L "$definition" ]] ||
+       [[ "$(stat -c %s -- "$definition")" -gt 262144 ]]; then
+        theme_definition_fail "missing, unsafe, or oversized palette.conf"
         return 1
     fi
 

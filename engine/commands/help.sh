@@ -17,7 +17,12 @@ Commands:
     current
     set <theme-id>
     install <owner/repo>
-    import analyze <owner/repo|github-url>
+    wallpaper help|list|current|random|set <file>
+    palette generate
+    render <module>
+    import analyze|preview <owner/repo|github-url>
+    import convert <owner/repo|github-url> <new-output-directory>
+    import install <pack-directory>
 EOF
 
 }

@@ -1,16 +1,9 @@
 #!/usr/bin/env bash
 
-set -e
-
-WALL="$1"
-
-if [[ -z "$WALL" ]]; then
-    echo "Usage: apply-theme.sh <wallpaper>"
-    exit 1
+set -Eeuo pipefail
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+if [[ "$#" -ne 1 ]]; then
+    printf 'Usage: apply-theme.sh <wallpaper>\n' >&2
+    exit 2
 fi
-
-echo "Generating theme..."
-
-cwal -i "$WALL"
-
-echo "Done."
+exec "$ROOT/engine/bin/theme" wallpaper set "$1"

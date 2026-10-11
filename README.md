@@ -1,63 +1,89 @@
 # Xcalibur Theme Engine
 
-A Bash theme engine for Hyprland. It generates a raw palette with CWAL, resolves the selected theme's semantic colors, renders engine-owned templates, and installs colors for Kitty, Waybar, Wofi, GTK 3/4, Hyprlock, and SwayNC. The project is under active development (CLI version 0.1.0).
+Xcalibur is a Bash theme engine for Hyprland desktops. It changes a Hyprpaper wallpaper, generates colors with CWAL, resolves semantic roles from a native theme pack, renders trusted templates, and installs styles for Kitty, Waybar, Wofi, GTK 3/4, Hyprlock, and SwayNC. It also analyzes public GitHub theme repositories and converts recognized colors into reviewable native packs. CLI version: `0.1.0`.
 
-## Setup
+## Requirements and setup
 
-Run the CLI from this checkout with `engine/bin/theme`, or symlink that executable into your `PATH`. It resolves the engine root from its own location. Trusted engine settings live in `config/theme.conf`, `config/paths.conf`, and `config/applications.conf`; these files are sourced as Bash. Edit `WALLPAPER_DIR` in `config/paths.conf` for your wallpaper directory. Generated state stays under `runtime/` and is ignored by Git.
+Run `engine/bin/theme` from this checkout. The CLI locates its repository from its own path. Bash, GNU coreutils, and standard shell tools are required. `wallpaper set` needs `cwal`, `hyprctl`, a running Hyprpaper session, and `timeout`. Import analysis, preview, and conversion need Git, Python 3, and `timeout`. Native GitHub pack installation needs Git and `timeout`. Application commands are needed only when their enabled integration reloads a running application. `theme doctor` distinguishes workflow requirements from optional tools.
 
-The wallpaper workflow needs CWAL, Hyprpaper, `hyprctl`, and ordinary shell utilities. `theme import analyze` additionally needs Git, Python 3, and `timeout`. Each enabled application needs its own installed configuration and reload tools. `theme doctor` prints a basic dependency check; it is diagnostic and does not repair settings.
+To install a copy under an existing user-writable prefix, run `python3 scripts/package.py install "$HOME/.local"`. This creates `$HOME/.local/share/xcalibur-theme-engine` and a `$HOME/.local/bin/theme` symlink, refusing collisions. If `$HOME/.local` does not exist, create it first. `python3 scripts/package.py uninstall "$HOME/.local"` removes that copy only when its manifest, files, and command symlink match; it refuses to erase edits, added files, or runtime data. Keep the checkout for development and run `make check` there. Package installation requires Python 3 and does not modify application styles or desktop settings.
 
-The development checkout is separate from `~/.config/theme`. Running its CLI reads this checkout's config and runtime; a real `set` or `wallpaper set` still writes application files under `$HOME/.config`, so use the isolated tests for development.
+Engine settings in `config/theme.conf`, `config/paths.conf`, and `config/applications.conf` are parsed as data with a fixed key list. Edit `WALLPAPER_DIR` in `config/paths.conf` and module enablement in `config/applications.conf` to suit your desktop. The supported settings are `COLOR_ENGINE=cwal` and `WALLPAPER_BACKEND=hyprpaper`; unsupported values fail clearly. Qt has no integration; `QT_ENABLED` is reserved and has no effect. Native and imported theme data is also parsed and never sourced.
 
-## Commands
+Generated output and persistent selection state live under `runtime/` inside the checkout and are ignored by Git. Direct `set` and `wallpaper set` commands install live files in your home directory; development tests use temporary homes and mocks. Running `make check` does not change your desktop or `~/.config/theme`.
+
+## CLI reference
 
 ```text
-theme help | version | status | doctor
-theme list | current | set <theme-id> | install <owner/repo>
-theme wallpaper help | list | current | random | set <file>
+theme help
+theme version
+theme status
+theme doctor
+theme list
+theme current
+theme set <theme-id>
+theme install <owner/repo>
+theme wallpaper help|list|current|random|set <file>
 theme palette generate
 theme render <module>
 theme import analyze <owner/repo|https://github.com/owner/repo>
+theme import preview <owner/repo|https://github.com/owner/repo>
+theme import convert <owner/repo|https://github.com/owner/repo> <new-output-directory>
+theme import install <pack-directory>
 ```
 
-`wallpaper set` accepts a path relative to `WALLPAPER_DIR` or an absolute path to a readable PNG, JPEG, or WebP file. It asks Hyprpaper to change the wallpaper, records the path, then generates and applies colors. `palette generate` regenerates the runtime palette from the recorded wallpaper. `render` writes one generated module output and requires an existing runtime palette.
+`wallpaper set` accepts an absolute file path or a filename relative to `WALLPAPER_DIR`; PNG, JPEG, and WebP extensions are accepted. It uses the first monitor reported by `hyprctl monitors`, preloads the image, and asks Hyprpaper to set it. A successful wallpaper command runs the full palette and application pipeline and then records the wallpaper. On failure it attempts to restore the previously recorded wallpaper, runtime palette, and installed application files. If there was no previous wallpaper, it reports that manual wallpaper recovery may be needed.
 
-`theme set` validates an installed theme, generates colors from the recorded wallpaper, then renders all enabled modules before installing them. A render failure restores the previous selection and leaves live application files alone. An install or reload failure can leave some files changed; the new selection remains recorded and the command returns failure. Repeating `theme set <theme-id>` is the current recovery route. Multi-application installation is not atomic.
+`palette generate` only generates and validates `runtime/generated/colors.sh`; it does not install application styles. `render <module>` renders one module into `runtime/generated/` without installing it. `set <theme-id>` validates an installed pack, generates and applies its colors, and records the selection only after the application pipeline succeeds. `status` returns failure for malformed or missing referenced state. Usage errors and unknown commands return 2; operational failures return 1.
 
-## Colors and theme packs
+## Native theme packs and color rules
 
-CWAL provides raw `COLOR0` through `COLOR15`, plus default background, foreground, and cursor. `themes/<id>/palette.conf` can map semantic roles to a raw color reference or a literal `#RRGGBB`. It does not alter the raw colors. The resolved palette is written to `runtime/generated/colors.sh` as validated color assignments. The engine parses this file as data when rendering and does not execute it.
+Each pack resides in `themes/<theme-id>/` with `theme.conf` and `palette.conf`. Each file is limited to 256 KiB. The lowercase ID contains letters, digits, and internal hyphens. `theme.conf` requires exactly one each of `THEME_ID`, `THEME_NAME`, `THEME_VERSION`, `THEME_AUTHOR`, and `THEME_DESCRIPTION`. Version uses `major.minor.patch` with an optional suffix. The ID must match the installed directory name. The files are simple `KEY=VALUE` data: blank lines and lines beginning with `#` are ignored; duplicate, unknown, empty, malformed, and control-character values are rejected. `palette.conf` starts with `XCALIBUR_DEFINITION_VERSION=1` and may specify any of the roles below as `COLOR0` through `COLOR15` or a literal `#RRGGBB`:
 
-A native theme pack has a root `theme.conf` and `palette.conf`. See `themes/xcalibur-test/` for a complete example. The manifest needs `THEME_ID`, `THEME_NAME`, `THEME_VERSION`, `THEME_AUTHOR`, and `THEME_DESCRIPTION`. The ID uses lowercase letters, digits, and internal hyphens. The palette starts with `XCALIBUR_DEFINITION_VERSION=1`; supported roles are `BACKGROUND`, `FOREGROUND`, `CURSOR`, `PRIMARY`, `SECONDARY`, `ACCENT`, `SUCCESS`, `WARNING`, `ERROR`, `MUTED`, `SURFACE`, `SURFACE_ALT`, `BORDER`, `SELECTION`, and `HIGHLIGHT`. Missing roles retain CWAL-based defaults. Duplicate or unknown fields and invalid values are rejected. Both files are parsed as data.
+```text
+BACKGROUND FOREGROUND CURSOR PRIMARY SECONDARY ACCENT SUCCESS WARNING ERROR
+MUTED SURFACE SURFACE_ALT BORDER SELECTION HIGHLIGHT
+```
 
-`theme install <owner/repo>` clones a native pack and installs only its validated root manifest and palette. It never activates the theme. It does not pin a revision or provide signatures, so the repository can change between installs. Existing installed IDs are protected from normal overwrite.
+CWAL's raw `COLOR0` through `COLOR15` values are copied into the runtime palette without changing their role or case. Default semantic mappings are: background, foreground, cursor from CWAL's corresponding values; primary=`COLOR4`, secondary=`COLOR5`, accent=`COLOR6`, success=`COLOR2`, warning=`COLOR3`, error=`COLOR1`, muted=`COLOR7`, surface=`COLOR2`, surface_alt=`COLOR3`, border=`COLOR4`, selection=`COLOR5`, and highlight=`COLOR6`. A pack overrides only roles it declares. Hex values are validated; the runtime palette is generated atomically and parsed as data by the renderer. See `themes/xcalibur-test` for a complete sample.
 
-## External repository analysis
+CWAL runs with an isolated config and output directory under `runtime/cache/`, `--no-reload`, and a 30 second timeout. This prevents an old user cache file from being mistaken for new output and avoids CWAL config links or scripts in the user's profile. The generated CWAL output is read as data, never executed. Supported CWAL arguments follow the [upstream CLI](https://github.com/nitinbhat972/cwal).
 
-`theme import analyze` retrieves a public GitHub repository into a private temporary directory, scans nested files, and prints a JSON report. The first adapters recognize literal six-digit hexadecimal colors in Kitty assignments, CSS custom properties and `@define-color` definitions, and simple `KEY=#RRGGBB` palette files. The report includes paths, formats, extracted colors, candidate semantic roles, conflicts, skipped files, source revision, and license file names. Ambiguous roles are left unresolved. It does not generate, preview, install, or apply a theme pack, and it does not convert application settings or CSS styling. The command cleans staging on completion and failure, and reports cleanup errors.
+## Application files and reloads
 
-The scanner limits traversal depth to 8, examined files to 2,000, individual files to 256 KiB, total candidate text to 4 MiB, and analysis to 10 seconds. Clone has a 60 second timeout. Clone download size is not yet bounded. Symlinks are not read. Attribution and redistribution require manual license review. The importer model and next stages are described in [docs/importer.md](docs/importer.md).
-
-## Application file ownership
-
-Modules render into `runtime/generated/` and then install these files:
-
-| Module | Destination | Current reload behavior |
+| Module | Installed file | Reload behavior |
 | --- | --- | --- |
-| Kitty | `~/.config/kitty/current-theme.conf` | `kitty @ set-colors` |
-| Waybar | `~/.config/waybar/styles/colors/xcalibur.css` | stop and start Waybar |
-| Wofi | `~/.config/wofi/style.css` | stop running Wofi |
-| GTK | `~/.config/gtk-3.0/gtk.css`, `~/.config/gtk-4.0/gtk.css` | request dark color scheme with `gsettings` |
-| Hyprlock | `~/.config/hypr/hyprlock.conf` | no live reload |
-| SwayNC | `~/.config/swaync/style.css` | stop and start SwayNC |
+| Kitty | `~/.config/kitty/current-theme.conf` | `kitty @ set-colors` if Kitty runs |
+| Waybar | `~/.config/waybar/styles/colors/xcalibur.css` | SIGUSR2 if Waybar runs |
+| Wofi | `~/.config/wofi/style.css` | Applied on next launch |
+| GTK | `~/.config/gtk-3.0/gtk.css`, `~/.config/gtk-4.0/gtk.css` | Applied by GTK when loaded; global preferences are untouched |
+| Hyprlock | `~/.config/hypr/hyprlock.conf` | Applied on next lock session |
+| SwayNC | `~/.config/swaync/style.css` | `swaync-client -rs` if SwayNC runs |
 
-GTK, Wofi, Hyprlock, and SwayNC destinations are whole engine-managed files. Hyprlock and SwayNC make a one-time `.xcalibur-backup` of an existing target. Kitty and Waybar use dedicated generated files that other configuration must include or reference. `QT_ENABLED` exists in config but there is no Qt module or supported frontend; Qt is not themed.
+The Waybar file must be imported by your Waybar stylesheet; the Kitty file must be included by Kitty to persist colors across launches. Other listed files are whole engine-managed targets. Existing Hyprlock and SwayNC files receive one-time `.xcalibur-backup` copies. The installer checks for symlinked targets and parent directories and replaces individual files atomically. Before multi-module installation it snapshots known targets, including backup files, and attempts to restore them on install, reload, or state-commit failure. An incomplete rollback is reported as an error. Waybar uses its documented [SIGUSR2 reload](https://github.com/Alexays/Waybar/blob/master/man/waybar.5.scd.in); SwayNC uses its documented [CSS reload client](https://github.com/ErikReider/SwayNotificationCenter).
 
-## Tests and development
+## GitHub import and conversion
 
-Run `bash tests/run.sh`. Tests use temporary directories and mocked service functions; they do not change the wallpaper or live application files. Run `bash -n` on changed Bash files for syntax checking. The repository is intended for the `codex/autonomous-dev` branch. Do not commit `runtime/` data. Contributions should keep theme packs as data, add fixtures for new source adapters, and document any new file ownership or reload behavior.
+The importer accepts public `owner/repo` references or HTTPS GitHub repository URLs with an optional trailing `.git`. It rejects query strings, fragment revisions, other hosts, and malformed names. The command clones without submodules into a private temporary directory and disables Git prompts, global/system configuration, hooks, and file protocol. Clone has a 60 second timeout. Repository files are scanned as data only. Scripts, templates, Makefiles, hooks, and application commands from the source repository are never executed.
 
-## Current limitations
+Supported color forms are literal six-digit hex values in Kitty assignments, CSS custom properties and GTK `@define-color`, simple palette `KEY=#RRGGBB` files, and opaque `rgba(RRGGBBff)` fields in Hyprlock configuration. Named colors, CSS expressions, partial alpha, short hex, shell expansions, and arbitrary app settings are not converted. Semantic names map by exact documented aliases in `engine/importer/analyze.py`; conflicting candidates remain unresolved. Analysis JSON contains source paths, format, application hint, confidence, candidates, conflicts, skipped files, and revision. Preview lists planned files and roles, conflicts, skipped count, and whether required background and foreground roles are unambiguous. Converted packs contain only `theme.conf` and `palette.conf`; no application configuration is copied.
 
-Application installation is not transactional. Some reload methods can disrupt a running application and need refinement. Module enablement is a trusted Bash setting. Install paths reject pre-existing symlinked directory components, but Bash checks cannot close races with concurrent path replacement. The native installer claims theme IDs exclusively; an interrupted native install may still leave staging or a partial pack. The importer supports analysis only and cannot yet stage or preview a converted pack. A recognized color is evidence of compatibility, not proof that a full application configuration can be imported.
+```sh
+engine/bin/theme import analyze owner/repo
+engine/bin/theme import preview owner/repo
+engine/bin/theme import convert owner/repo /tmp/my-new-pack
+engine/bin/theme import install /tmp/my-new-pack
+engine/bin/theme set owner-repo
+```
+
+Conversion requires unambiguous `BACKGROUND` and `FOREGROUND`. It creates a new directory and refuses collisions. Explicit `import install` revalidates the pack with the native parser and refuses an installed ID collision. Analysis, preview, and conversion never install or apply a theme. Review the source license and generated files before installation or redistribution. Live GitHub retrieval has not been verified in the deterministic suite; local Git mocks and scanner fixtures are used. See [importer documentation](docs/importer.md).
+
+## Security and limitations
+
+Theme files, engine settings, and CWAL palettes are data only; bundled module scripts are trusted code. Import scanning skips symlinks and special files, caps directory depth at 8, directories and files at 2,000 each, individual files at 256 KiB, total candidate text at 4 MiB, and analysis time at 10 seconds. Clone duration is bounded, but total network download and checkout disk use are not yet strictly bounded. Bash path checks reject symlinked path components at check time, but concurrent replacement between checks and use remains possible. The importer likewise cannot fully prevent concurrent parent-directory replacement. Run imports and installs where untrusted users cannot write parent directories. Rollback restores file content and ordinary mode bits but not ACLs, extended attributes, or already observed application state. Waybar user configuration can override SIGUSR2 behavior. Multiple monitor selection and non-Hyprpaper backends remain deferred. Qt is deferred until a concrete frontend and integration contract are chosen.
+
+## Development, checks, and releases
+
+`make check` is the authoritative local and CI command. It runs Bash and Python compilation checks, Python unit tests, CLI smoke tests, isolated Bash regressions, an isolated CLI integration test, a deliberate failure probe for the runner, `git diff --check`, and whitespace checks for new files. It prints `PASS`, `FAIL`, `SKIP`, and `UNAVAILABLE` with counts and returns nonzero if a required check fails. Tests use disposable directories, mocked commands, and no real desktop session or network. The CI workflow runs the same command. To contribute, add a deterministic fixture for each new adapter or failure path, update documentation, run `make check`, inspect the diff, and commit on a development branch. The current version is development version 0.1.0; a release requires a verified live desktop and GitHub integration pass.
+
+For diagnostics, run `theme doctor` and `theme status`. If a reload fails, inspect the reported module and rerun `theme set <theme-id>` after fixing it. If rollback reports an error, inspect the listed application files and `.xcalibur-backup` files before retrying. See [roadmap](docs/roadmap.md) for outstanding work and [changelog](CHANGELOG.md) for changes.

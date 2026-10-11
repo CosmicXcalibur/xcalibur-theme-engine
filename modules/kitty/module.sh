@@ -10,12 +10,8 @@ kitty_render() {
 
 kitty_apply() {
 
-    kitty_render
-
-    kitty_install
-
-    if ! kitty_reload; then
-        log_warn "Kitty configuration installed, but live color reload failed."
-    fi
+    kitty_render || return 1
+    kitty_install || return 1
+    kitty_reload
 
 }

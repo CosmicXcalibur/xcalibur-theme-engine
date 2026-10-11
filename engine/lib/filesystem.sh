@@ -24,7 +24,8 @@ fs_directory_safe() {
 
 # Replace one engine-owned application file without exposing a partial write.
 fs_install_atomic() {
-    local source_file="$1" target="$2" target_dir tmp
+    local source_file="$1" target="$2" mode="${3:-644}" target_dir tmp
+    [[ "$mode" =~ ^[0-7]{3,4}$ ]] || return 1
     [[ -f "$source_file" && ! -L "$source_file" && ! -L "$target" &&
        "$target" == /* && ! "$target" =~ [[:cntrl:]] ]] || {
         log_error "Invalid installation source or target: $target"
@@ -37,7 +38,7 @@ fs_install_atomic() {
     }
     [[ ! -e "$target" || -f "$target" ]] || return 1
     tmp="$(mktemp "$target_dir/.xcalibur.XXXXXX")" || return 1
-    if ! install -m 644 -- "$source_file" "$tmp" ||
+    if ! install -m "$mode" -- "$source_file" "$tmp" ||
        ! fs_directory_safe "$target_dir" false ||
        [[ -L "$target" || ( -e "$target" && ! -f "$target" ) ]] ||
        ! mv -f -- "$tmp" "$target"; then
