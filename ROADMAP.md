@@ -112,6 +112,25 @@ Completed on `develop` independently of the version milestones above:
 
 ---
 
+# Phase 5 ✅ Theme-Pack Lifecycle Management
+
+Completed on `develop` independently of the version milestones above:
+
+- Installed packs have one shared structural validation path for installation,
+  inspection, selection, listing, and palette overlay.
+- `theme info`, individual and whole-library `theme validate`, and an inventory
+  that exposes damaged packs provide read-only diagnostics.
+- `theme remove` protects the active pack, rejects unsafe paths and state, and
+  does not switch or apply themes.
+- Temporary-directory tests cover native and external pack lifecycle, malformed
+  packs, symlinks, failed removal, state preservation, and installer regressions.
+- Commands, validation limits, and removal behavior are documented in
+  [Theme-pack lifecycle](docs/theme-pack-lifecycle.md).
+
+Next: Phase 6 reliability and rollback.
+
+---
+
 # v1.0.0 🚀 Stable Release
 
 Goals

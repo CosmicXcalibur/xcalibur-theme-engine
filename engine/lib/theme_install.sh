@@ -5,6 +5,9 @@
 # ==========================================================
 
 THEME_INSTALL_LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if ! declare -F theme_pack_validate > /dev/null; then
+    source "$THEME_INSTALL_LIB_DIR/theme_pack.sh"
+fi
 
 theme_install_repo_validate() {
     local repository="$1"
@@ -109,6 +112,11 @@ theme_install_native_pack() {
         return 1
     fi
 
+    if ! theme_library_check; then
+        log_error "$(theme_display_value "$THEME_PACK_ERROR")"
+        return 1
+    fi
+
     theme_dir="$THEMES_DIR/$theme_id"
 
     if [[ -e "$theme_dir" || -L "$theme_dir" ]]; then
@@ -131,14 +139,11 @@ theme_install_native_pack() {
         return 1
     fi
 
-    if ! theme_install_root_file_validate "$theme_dir/theme.conf" ||
-       ! theme_install_root_file_validate "$theme_dir/palette.conf" ||
-       ! theme_manifest_load "$theme_dir/theme.conf" "$theme_id" ||
-       ! theme_definition_load "$theme_dir/palette.conf" "$theme_id"; then
+    if ! theme_pack_validate "$theme_id"; then
         if [[ "$destination_created" == true ]]; then
             rm -rf -- "$theme_dir"
         fi
-        log_error "Installed theme '$theme_id' failed verification."
+        log_error "Installed theme '$theme_id' failed verification: $(theme_display_value "$THEME_PACK_ERROR")"
         return 1
     fi
 

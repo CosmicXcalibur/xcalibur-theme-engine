@@ -34,31 +34,20 @@ color_resolve_theme_value() {
 
 color_apply_selected_theme_overlay() {
 
-    [[ -f "$CURRENT_THEME_FILE" ]] || return 0
+    [[ -e "$CURRENT_THEME_FILE" || -L "$CURRENT_THEME_FILE" ]] || return 0
 
     local theme_id
-    local theme_dir
     local role
     local resolved
 
-    theme_id="$(< "$CURRENT_THEME_FILE")"
-
-    [[ -n "$theme_id" ]] || return 0
-
-    if ! theme_id_validate "$theme_id"; then
-        log_error "Selected theme ID is invalid."
+    if ! theme_active_id_read; then
+        log_error "$(theme_display_value "$THEME_ACTIVE_ERROR")"
         return 1
     fi
+    theme_id="$THEME_ACTIVE_ID"
 
-    theme_dir="$THEMES_DIR/$theme_id"
-
-    if ! theme_manifest_load "$theme_dir/theme.conf" "$theme_id"; then
-        log_error "Selected theme '$theme_id' is invalid: $THEME_MANIFEST_ERROR"
-        return 1
-    fi
-
-    if ! theme_definition_load "$theme_dir/palette.conf" "$theme_id"; then
-        log_error "Selected theme '$theme_id' is invalid: $THEME_DEFINITION_ERROR"
+    if ! theme_pack_validate "$theme_id"; then
+        log_error "Selected theme '$theme_id' is invalid: $(theme_display_value "$THEME_PACK_ERROR")"
         return 1
     fi
 

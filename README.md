@@ -26,7 +26,7 @@ The project is designed around a layered architecture to keep the engine scalabl
 
 Current Release:
 
-**v0.1.0 CLI version; external palette adapters completed in Phase 4.**
+**v0.1.0 CLI version; external palette adapters and theme-pack lifecycle management completed.**
 
 ---
 
@@ -73,6 +73,7 @@ theme/
 - Native GitHub theme-pack installation
 - Catppuccin, Rosé Pine, and Nord palette imports
 - Validated semantic palette overlays on the existing CWAL color pipeline
+- Inspection, validation, inventory, and safe removal of installed packs
 
 See [the roadmap](ROADMAP.md) for planned work and
 [external adapter documentation](docs/external-adapters.md) for sources,
@@ -90,12 +91,20 @@ theme install rose-pine/rose-pine-palette --format rose-pine --variant moon
 theme install nordtheme/nord --format nord
 theme list
 theme current
+theme info <theme-id>
+theme validate <theme-id>
+theme validate --all
 theme set <theme-id>
+theme remove <theme-id>
 ```
 
 Installation validates and stores a theme. `theme set` selects and applies it.
 External imports require their official repository and an explicit variant
-when that palette has more than one. See `theme help` for all commands.
+when that palette has more than one. `theme info` shows validated metadata and
+semantic colors; `theme validate --all` reports every pack and exits nonzero if
+any is invalid. `theme remove` deletes only an inactive pack and never switches
+themes. See [theme-pack lifecycle](docs/theme-pack-lifecycle.md) for output,
+failure behavior, and security limits; use `theme help` for command syntax.
 
 ---
 

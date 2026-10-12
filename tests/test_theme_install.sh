@@ -22,6 +22,7 @@ mkdir -p "$TEST_BIN" "$TMPDIR" "$THEMES_DIR" "$(dirname "$CURRENT_THEME_FILE")"
 source "$REPOSITORY_ROOT/engine/lib/common.sh"
 source "$REPOSITORY_ROOT/engine/lib/theme_manifest.sh"
 source "$REPOSITORY_ROOT/engine/lib/theme_definition.sh"
+source "$REPOSITORY_ROOT/engine/lib/theme_pack.sh"
 source "$REPOSITORY_ROOT/engine/lib/theme_install.sh"
 
 cat > "$TEST_BIN/git" <<'EOF'
