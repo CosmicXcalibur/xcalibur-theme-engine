@@ -143,11 +143,15 @@ def allowed_dest(payload: dict, dest: str) -> bool:
     home = Path(payload["home"])
     generated = Path(payload["generated"])
     cwal = Path(payload["cwal"])
+    target = Path(dest)
+    if not target.is_absolute() or os.path.normpath(dest) != dest:
+        return False
     states = {payload["theme_state"], payload["wallpaper_state"]}
     return dest in states or dest in {str(home / ".config" / name) for name in APP_PATHS} or (
-        Path(dest).parent in {generated, cwal}
-        and Path(dest).name != ""
-        and all(char.isascii() and (char.isalnum() or char in "._-") for char in Path(dest).name)
+        target.parent in {generated, cwal, cwal / "schemes"}
+        and target != cwal / "schemes"
+        and target.name != ""
+        and all(char.isascii() and (char.isalnum() or char in "._-") for char in target.name)
     )
 
 
@@ -313,11 +317,13 @@ def prepare(txn: Path, plan_file: Path, theme_id: str, wallpaper: str) -> None:
 
 
 def ensure_parents(payload: dict) -> None:
+    cache_root = Path(payload["home"]) / ".cache"
     for name in payload["created_dirs"]:
         directory = Path(name)
         real_directories(directory)
         if not directory.exists():
-            directory.mkdir(mode=0o755)
+            mode = 0o700 if directory == cache_root or cache_root in directory.parents else 0o755
+            directory.mkdir(mode=mode)
         require(stat.S_ISDIR(directory.lstat().st_mode), f"unsafe destination directory: {directory}")
 
 

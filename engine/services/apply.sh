@@ -145,18 +145,32 @@ theme_apply() (
 
     THEME_TXN_PLAN_FILE="$txn/plan.nul"
     : > "$THEME_TXN_PLAN_FILE" || { theme_apply_failure "$txn" "Unable to write transaction plan."; return 1; }
-    for file in "$stage/cwal"/* "$stage/generated"/*; do
-        [[ -e "$file" || -L "$file" ]] || continue
-        if [[ "$file" == "$stage/cwal/"* ]]; then
-            if ! theme_txn_plan "$file" "${CWAL_COLORS%/*}/${file##*/}"; then
-                theme_apply_failure "$txn" "Unable to record cwal output."
+    local scheme_file
+    shopt -s nullglob dotglob
+    for file in "$stage/cwal"/*; do
+        if [[ -d "$file" && ! -L "$file" ]]; then
+            if [[ "${file##*/}" != schemes ]]; then
+                theme_apply_failure "$txn" "Unexpected cwal output directory: $file"
                 return 1
             fi
-        else
-            if ! theme_txn_plan "$file" "$live_generated/${file##*/}"; then
-                theme_apply_failure "$txn" "Unable to record generated output."
-                return 1
-            fi
+            for scheme_file in "$file"/*; do
+                if [[ ! -f "$scheme_file" || -L "$scheme_file" ]] ||
+                   ! theme_txn_plan "$scheme_file" "${CWAL_COLORS%/*}/schemes/${scheme_file##*/}"; then
+                    theme_apply_failure "$txn" "Unable to record cwal scheme: $scheme_file"
+                    return 1
+                fi
+            done
+        elif [[ ! -f "$file" || -L "$file" ]] ||
+             ! theme_txn_plan "$file" "${CWAL_COLORS%/*}/${file##*/}"; then
+            theme_apply_failure "$txn" "Unable to record cwal output: $file"
+            return 1
+        fi
+    done
+    for file in "$stage/generated"/*; do
+        if [[ ! -f "$file" || -L "$file" ]] ||
+           ! theme_txn_plan "$file" "$live_generated/${file##*/}"; then
+            theme_apply_failure "$txn" "Unable to record generated output: $file"
+            return 1
         fi
     done
     for module in "${modules_to_apply[@]}"; do

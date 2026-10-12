@@ -57,6 +57,14 @@ cwal() {
     done
     [[ -n "$output" ]] || return 1
     if [[ "${TEST_FAIL_CWAL:-0}" == 1 ]]; then return 1; fi
+    mkdir -m 700 -- "$output/schemes"
+    printf '%s\n' "${TEST_CWAL_SCHEME_VALUE:-generated scheme}" > "$output/schemes/shared.cwal"
+    if [[ "${TEST_CWAL_NEW_SCHEME:-0}" == 1 ]]; then
+        printf 'new scheme\n' > "$output/schemes/rollback-new.cwal"
+    fi
+    if [[ "${TEST_CWAL_EXTRA_DIR:-0}" == 1 ]]; then
+        mkdir "$output/unexpected-directory"
+    fi
     cat > "$output/colors.sh" <<'EOF'
 background='#101010'
 foreground='#f0f0f0'
@@ -111,6 +119,9 @@ assert_no_transactions() {
 # Existing and absent destinations are both part of a successful apply.
 printf 'previous kitty\n' > "$HOME/.config/kitty/current-theme.conf"
 chmod 600 "$HOME/.config/kitty/current-theme.conf"
+mkdir -m 700 -p "$HOME/.cache/cwal/schemes"
+printf 'unrelated scheme\n' > "$HOME/.cache/cwal/schemes/keep.cwal"
+printf 'previous scheme\n' > "$HOME/.cache/cwal/schemes/shared.cwal"
 theme_set set native-fixture > "$TEST_ROOT/output"
 [[ "$(< "$CURRENT_THEME_FILE")" == native-fixture ]] || fail 'active state was not committed'
 rg -F 'background #101010' "$HOME/.config/kitty/current-theme.conf" > /dev/null || fail 'Kitty output was not installed'
@@ -118,6 +129,9 @@ rg -F 'background #101010' "$HOME/.config/kitty/current-theme.conf" > /dev/null 
 [[ -f "$HOME/.config/gtk-3.0/gtk.css" && -f "$HOME/.config/gtk-4.0/gtk.css" ]] || fail 'GTK outputs missing'
 [[ -f "$HOME/.config/hypr/hyprlock.conf" && -f "$HOME/.config/swaync/style.css" ]] || fail 'other module outputs missing'
 [[ -f "$GENERATED_DIR/colors.sh" && -f "$HOME/.cache/cwal/colors.sh" ]] || fail 'generated palettes missing'
+[[ "$(< "$HOME/.cache/cwal/schemes/shared.cwal")" == 'generated scheme' ]] || fail 'CWAL scheme was not installed'
+[[ "$(< "$HOME/.cache/cwal/schemes/keep.cwal")" == 'unrelated scheme' ]] || fail 'unrelated CWAL scheme changed'
+[[ "$(stat -c %a "$HOME/.cache/cwal/schemes")" == 700 ]] || fail 'CWAL schemes directory mode changed'
 assert_no_transactions
 
 # Existing legacy backup files remain outside subsequent replacement plans.
@@ -136,6 +150,54 @@ assert_baseline() {
         fail 'rollback did not restore Kitty permissions'
     assert_no_transactions
 }
+
+# CWAL's real output layout includes schemes/. A changed scheme and a newly
+# created scheme must both roll back without disturbing another cache entry.
+TEST_CWAL_SCHEME_VALUE='attempted scheme'
+TEST_CWAL_NEW_SCHEME=1
+TEST_FAIL_RELOAD=kitty
+run_fail theme_set set old-theme
+unset TEST_CWAL_SCHEME_VALUE TEST_CWAL_NEW_SCHEME TEST_FAIL_RELOAD
+[[ ! -e "$HOME/.cache/cwal/schemes/rollback-new.cwal" ]] || fail 'new CWAL scheme survived rollback'
+[[ "$(< "$HOME/.cache/cwal/schemes/shared.cwal")" == 'generated scheme' ]] || fail 'existing CWAL scheme was not restored'
+assert_baseline
+
+TEST_CWAL_EXTRA_DIR=1
+run_fail theme_set set old-theme
+unset TEST_CWAL_EXTRA_DIR
+contains 'Unexpected cwal output directory'
+assert_baseline
+
+# The schemes directory must remain a real directory; unsafe replacements
+# are rejected before any live destination changes.
+mv "$HOME/.cache/cwal/schemes" "$TEST_ROOT/schemes.saved"
+ln -s "$TEST_ROOT/schemes.saved" "$HOME/.cache/cwal/schemes"
+run_fail theme_set set old-theme
+contains 'unsafe directory component'
+rm -- "$HOME/.cache/cwal/schemes"
+mv "$TEST_ROOT/schemes.saved" "$HOME/.cache/cwal/schemes"
+assert_baseline
+mv "$HOME/.cache/cwal/schemes" "$TEST_ROOT/schemes.saved"
+printf 'unexpected file\n' > "$HOME/.cache/cwal/schemes"
+run_fail theme_set set old-theme
+contains 'unsafe directory component'
+rm -- "$HOME/.cache/cwal/schemes"
+mv "$TEST_ROOT/schemes.saved" "$HOME/.cache/cwal/schemes"
+assert_baseline
+mv "$HOME/.cache/cwal/schemes" "$TEST_ROOT/schemes.saved"
+TEST_FAIL_RELOAD=kitty
+run_fail theme_set set old-theme
+unset TEST_FAIL_RELOAD
+[[ ! -e "$HOME/.cache/cwal/schemes" ]] || fail 'rollback left a newly created CWAL schemes directory'
+mv "$TEST_ROOT/schemes.saved" "$HOME/.cache/cwal/schemes"
+assert_baseline
+mv "$HOME/.cache/cwal/schemes/shared.cwal" "$TEST_ROOT/shared.saved"
+mkfifo "$HOME/.cache/cwal/schemes/shared.cwal"
+run_fail theme_set set old-theme
+contains 'unsafe filesystem object'
+rm -- "$HOME/.cache/cwal/schemes/shared.cwal"
+mv "$TEST_ROOT/shared.saved" "$HOME/.cache/cwal/schemes/shared.cwal"
+assert_baseline
 
 transaction_call_real() { python3 "$THEME_TRANSACTION_HELPER" "$@"; }
 theme_txn_call() {

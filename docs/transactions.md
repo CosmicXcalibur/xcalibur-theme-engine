@@ -7,13 +7,17 @@ module there, and validates the generated palette and rendered files. It then
 snapshots all destinations before replacing any live file. Rendered palette
 data and templates are parsed as data; they are never sourced as shell code.
 
-The transaction covers the files Xcalibur writes: cwal cache outputs, all
+The transaction covers the files Xcalibur writes: top-level cwal cache files,
+regular files inside cwal's `schemes/` cache directory, all
 `runtime/generated/` outputs, Kitty, Waybar, Wofi, GTK 3 and 4, Hyprlock and
 SwayNC configuration fragments, legacy Hyprlock and SwayNC backup files when
 created, and the active theme or wallpaper state being changed. It records
 which files existed, preserves existing file modes and timestamps for rollback,
-and removes files and empty directories created by a failed attempt. A private
-`runtime/transactions/` journal authenticates its path list and snapshots;
+and removes files and empty directories created by a failed attempt. The
+`schemes/` directory itself is a container, not a replaceable file; its
+unrelated entries remain untouched. Symlinked or unexpected cache objects are
+rejected. A private journal under `runtime/transactions/` authenticates its
+path list and snapshots;
 the engine accepts only its known destination paths. The persistent `.key`
 and `.lock` files in that directory support journal validation and serialized
 applications.
