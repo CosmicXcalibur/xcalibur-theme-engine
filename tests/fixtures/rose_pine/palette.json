@@ -1,0 +1,44 @@
+{
+  "main": [
+    {"role":"base","hex":"191724"},
+    {"role":"surface","hex":"1f1d2e"},
+    {"role":"overlay","hex":"26233a"},
+    {"role":"muted","hex":"6e6a86"},
+    {"role":"subtle","hex":"908caa"},
+    {"role":"text","hex":"e0def4"},
+    {"role":"love","hex":"eb6f92"},
+    {"role":"gold","hex":"f6c177"},
+    {"role":"rose","hex":"ebbcba"},
+    {"role":"pine","hex":"31748f"},
+    {"role":"foam","hex":"9ccfd8"},
+    {"role":"iris","hex":"c4a7e7"}
+  ],
+  "moon": [
+    {"role":"base","hex":"232136"},
+    {"role":"surface","hex":"2a273f"},
+    {"role":"overlay","hex":"393552"},
+    {"role":"muted","hex":"6e6a86"},
+    {"role":"subtle","hex":"908caa"},
+    {"role":"text","hex":"e0def4"},
+    {"role":"love","hex":"eb6f92"},
+    {"role":"gold","hex":"f6c177"},
+    {"role":"rose","hex":"ea9a97"},
+    {"role":"pine","hex":"3e8fb0"},
+    {"role":"foam","hex":"9ccfd8"},
+    {"role":"iris","hex":"c4a7e7"}
+  ],
+  "dawn": [
+    {"role":"base","hex":"faf4ed"},
+    {"role":"surface","hex":"fffaf3"},
+    {"role":"overlay","hex":"f2e9e1"},
+    {"role":"muted","hex":"9893a5"},
+    {"role":"subtle","hex":"797593"},
+    {"role":"text","hex":"464261"},
+    {"role":"love","hex":"b4637a"},
+    {"role":"gold","hex":"ea9d34"},
+    {"role":"rose","hex":"d7827e"},
+    {"role":"pine","hex":"286983"},
+    {"role":"foam","hex":"56949f"},
+    {"role":"iris","hex":"907aa9"}
+  ]
+}

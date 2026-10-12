@@ -97,6 +97,21 @@ Goals
 
 ---
 
+# Phase 4 ✅ External Theme Adapters
+
+Completed on `develop` independently of the version milestones above:
+
+- Native GitHub theme-pack installation remains the shared validation path.
+- Catppuccin, Rosé Pine, and Nord official palette formats have dedicated,
+  data-only adapters with deterministic native output.
+- Installer options, official repository restrictions, source validation,
+  atomic destination creation, and temporary cleanup are covered by local
+  fixture tests, including the destination creation race.
+- User commands, color mappings, adapter contract, limitations, and security
+  boundaries are documented in [External theme adapters](docs/external-adapters.md).
+
+---
+
 # v1.0.0 🚀 Stable Release
 
 Goals

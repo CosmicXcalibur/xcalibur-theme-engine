@@ -26,7 +26,7 @@ The project is designed around a layered architecture to keep the engine scalabl
 
 Current Release:
 
-**v0.1.0 – Bootstrap Framework**
+**v0.1.0 CLI version; external palette adapters completed in Phase 4.**
 
 ---
 
@@ -68,38 +68,34 @@ theme/
 
 ---
 
-## Planned Features
+## Current Capabilities
 
-- Wallpaper Manager
-- cwal Integration
-- Template Rendering Engine
-- Kitty Module
-- Waybar Module
-- GTK Theme Support
-- Qt Theme Support
-- Theme Packs
-- Automatic Reload System
-- Modular Plugin Architecture
+- Native GitHub theme-pack installation
+- Catppuccin, Rosé Pine, and Nord palette imports
+- Validated semantic palette overlays on the existing CWAL color pipeline
+
+See [the roadmap](ROADMAP.md) for planned work and
+[external adapter documentation](docs/external-adapters.md) for sources,
+color mappings, security boundaries, and test instructions.
 
 ---
 
-## Current Commands
+## Theme Installation
 
 ```bash
 theme help
-theme version
-theme status
-theme doctor
+theme install owner/repo
+theme install catppuccin/palette --format catppuccin --variant mocha
+theme install rose-pine/rose-pine-palette --format rose-pine --variant moon
+theme install nordtheme/nord --format nord
+theme list
+theme current
+theme set <theme-id>
 ```
 
-Upcoming:
-
-```bash
-theme wallpaper list
-theme wallpaper current
-theme wallpaper set
-theme wallpaper random
-```
+Installation validates and stores a theme. `theme set` selects and applies it.
+External imports require their official repository and an explicit variant
+when that palette has more than one. See `theme help` for all commands.
 
 ---
 

@@ -21,11 +21,55 @@ theme_install_root_file_validate() {
     [[ -f "$file" && ! -L "$file" ]]
 }
 
-theme_install_variant_validate() {
+theme_install_adapter_spec() {
+    # Each adapter declares its one trusted repository, data input, local
+    # converter, and allowed variants. Empty variants mean no --variant.
     case "$1" in
-        latte|frappe|macchiato|mocha) return 0 ;;
+        catppuccin)
+            THEME_ADAPTER_REPOSITORY=catppuccin/palette
+            THEME_ADAPTER_INPUT=palette.json
+            THEME_ADAPTER_CONVERTER=catppuccin.py
+            THEME_ADAPTER_VARIANTS="latte frappe macchiato mocha"
+            ;;
+        rose-pine)
+            THEME_ADAPTER_REPOSITORY=rose-pine/rose-pine-palette
+            THEME_ADAPTER_INPUT=palette.json
+            THEME_ADAPTER_CONVERTER=rose_pine.py
+            THEME_ADAPTER_VARIANTS="main moon dawn"
+            ;;
+        nord)
+            THEME_ADAPTER_REPOSITORY=nordtheme/nord
+            THEME_ADAPTER_INPUT=src/nord.css
+            THEME_ADAPTER_CONVERTER=nord.py
+            THEME_ADAPTER_VARIANTS=""
+            ;;
         *) return 1 ;;
     esac
+}
+
+theme_install_adapter_variant_validate() {
+    local variant="$1"
+    local allowed_variant
+
+    for allowed_variant in $THEME_ADAPTER_VARIANTS; do
+        [[ "$variant" == "$allowed_variant" ]] && return 0
+    done
+    return 1
+}
+
+theme_install_source_file_validate() {
+    local repository_dir="$1"
+    local relative_path="$2"
+    local path="$repository_dir"
+    local component
+    local -a components=()
+
+    IFS='/' read -r -a components <<< "$relative_path"
+    for component in "${components[@]}"; do
+        path="$path/$component"
+        [[ ! -L "$path" ]] || return 1
+    done
+    [[ -f "$path" ]]
 }
 
 # Install a staged native pack. Both native repositories and adapter output
@@ -109,7 +153,8 @@ theme_install_staged_repository() {
     local variant="$3"
     local staging_dir="$4"
     local native_dir="$repository_dir"
-    local palette_json="$repository_dir/palette.json"
+    local input_file=""
+    local -a converter_command=()
 
     case "$format" in
         native)
@@ -122,39 +167,37 @@ theme_install_staged_repository() {
             log_error "Repository is missing root-level theme.conf and palette.conf."
             return 1
             ;;
-        catppuccin)
-            if ! theme_install_root_file_validate "$palette_json"; then
-                log_error "Repository is missing a regular, non-symlink palette.json at its root."
+        *)
+            if ! theme_install_adapter_spec "$format"; then
+                log_error "Unsupported theme source format: $format"
                 return 1
             fi
-
-            if ! cmd_exists python3; then
-                log_error "Required command not found: python3 (needed for Catppuccin palette import)."
+            input_file="$repository_dir/$THEME_ADAPTER_INPUT"
+            if ! theme_install_source_file_validate "$repository_dir" "$THEME_ADAPTER_INPUT"; then
+                log_error "Repository is missing a regular, non-symlink $THEME_ADAPTER_INPUT."
                 return 1
             fi
 
             native_dir="$staging_dir/native-pack"
-            if ! python3 "$THEME_INSTALL_LIB_DIR/adapters/catppuccin.py" \
-                --input "$palette_json" \
-                --variant "$variant" \
-                --output "$native_dir"; then
-                log_error "Unable to convert Catppuccin palette."
+            converter_command=(python3 "$THEME_INSTALL_LIB_DIR/adapters/$THEME_ADAPTER_CONVERTER"
+                --input "$input_file" --output "$native_dir")
+            if [[ -n "$variant" ]]; then
+                converter_command+=(--variant "$variant")
+            fi
+            if ! "${converter_command[@]}"; then
+                log_error "Unable to convert $format palette."
                 return 1
             fi
 
             theme_install_native_pack "$native_dir"
             return $?
             ;;
-        *)
-            log_error "Unsupported theme source format: $format"
-            return 1
-            ;;
     esac
 }
 
 theme_install() {
     if [[ "$#" -lt 2 ]]; then
-        log_error "Usage: theme install <owner/repo> (native) or theme install catppuccin/palette --format catppuccin --variant <flavor>"
+        log_error "Usage: theme install <owner/repo> [--format <adapter> [--variant <variant>]]"
         return 1
     fi
 
@@ -172,20 +215,16 @@ theme_install() {
         case "$1" in
             --format)
                 if [[ "$format_seen" == true || "$#" -lt 2 ]]; then
-                    log_error "Usage: theme install catppuccin/palette --format catppuccin --variant <flavor>"
+                    log_error "Duplicate or missing --format value."
                     return 1
                 fi
-                if [[ "$2" != catppuccin ]]; then
-                    log_error "Unsupported theme source format: $2"
-                    return 1
-                fi
-                format=catppuccin
+                format="$2"
                 format_seen=true
                 shift 2
                 ;;
             --variant)
                 if [[ "$variant_seen" == true || "$#" -lt 2 ]]; then
-                    log_error "Usage: theme install catppuccin/palette --format catppuccin --variant <flavor>"
+                    log_error "Duplicate or missing --variant value."
                     return 1
                 fi
                 variant="$2"
@@ -199,18 +238,8 @@ theme_install() {
         esac
     done
 
-    if [[ "$format_seen" != "$variant_seen" ]]; then
-        log_error "Catppuccin installs require both --format catppuccin and --variant <flavor>."
-        return 1
-    fi
-
-    if [[ "$format" == catppuccin ]] && ! theme_install_variant_validate "$variant"; then
-        log_error "Invalid Catppuccin variant: $variant (expected latte, frappe, macchiato, or mocha)."
-        return 1
-    fi
-
-    if [[ "$format" == catppuccin && "$repository" != "catppuccin/palette" ]]; then
-        log_error "The Catppuccin adapter supports only the official repository: catppuccin/palette."
+    if [[ "$variant_seen" == true && "$format_seen" == false ]]; then
+        log_error "--variant requires an external --format."
         return 1
     fi
 
@@ -219,13 +248,36 @@ theme_install() {
         return 1
     fi
 
+    if [[ "$format_seen" == true ]]; then
+        if ! theme_install_adapter_spec "$format"; then
+            log_error "Unsupported theme source format: $format"
+            return 1
+        fi
+        if [[ "$repository" != "$THEME_ADAPTER_REPOSITORY" ]]; then
+            log_error "The $format adapter supports only: $THEME_ADAPTER_REPOSITORY."
+            return 1
+        fi
+        if [[ -n "$THEME_ADAPTER_VARIANTS" && "$variant_seen" == false ]]; then
+            log_error "$format installs require --variant (expected: $THEME_ADAPTER_VARIANTS)."
+            return 1
+        fi
+        if [[ -z "$THEME_ADAPTER_VARIANTS" && "$variant_seen" == true ]]; then
+            log_error "$format does not support --variant."
+            return 1
+        fi
+        if [[ "$variant_seen" == true ]] && ! theme_install_adapter_variant_validate "$variant"; then
+            log_error "Invalid $format variant: $variant (expected: $THEME_ADAPTER_VARIANTS)."
+            return 1
+        fi
+    fi
+
     if ! cmd_exists git; then
         log_error "Required command not found: git"
         return 1
     fi
 
-    if [[ "$format" == catppuccin ]] && ! cmd_exists python3; then
-        log_error "Required command not found: python3 (needed for Catppuccin palette import)."
+    if [[ "$format_seen" == true ]] && ! cmd_exists python3; then
+        log_error "Required command not found: python3 (needed for external palette import)."
         return 1
     fi
 

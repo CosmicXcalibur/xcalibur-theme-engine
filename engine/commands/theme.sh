@@ -27,6 +27,13 @@ command_theme() {
             echo "    theme set <theme-id>"
             echo "    theme install <owner/repo>"
             echo "    theme install catppuccin/palette --format catppuccin --variant <latte|frappe|macchiato|mocha>"
+            echo "    theme install rose-pine/rose-pine-palette --format rose-pine --variant <main|moon|dawn>"
+            echo "    theme install nordtheme/nord --format nord"
+            echo
+            echo "Examples:"
+            echo "    theme install catppuccin/palette --format catppuccin --variant mocha"
+            echo "    theme install rose-pine/rose-pine-palette --format rose-pine --variant moon"
+            echo "    theme install nordtheme/nord --format nord"
             return 1
             ;;
     esac
