@@ -26,6 +26,7 @@ command_theme() {
             echo "    theme current"
             echo "    theme set <theme-id>"
             echo "    theme install <owner/repo>"
+            echo "    theme install catppuccin/palette --format catppuccin --variant <latte|frappe|macchiato|mocha>"
             return 1
             ;;
     esac

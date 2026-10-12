@@ -1,0 +1,83 @@
+{
+  "version": "1.8.0",
+  "latte": {
+    "name": "Latte",
+    "dark": false,
+    "colors": {
+      "rosewater": {"hex": "#dc8a78"},
+      "mauve": {"hex": "#8839ef"},
+      "red": {"hex": "#d20f39"},
+      "yellow": {"hex": "#df8e1d"},
+      "green": {"hex": "#40a02b"},
+      "blue": {"hex": "#1e66f5"},
+      "lavender": {"hex": "#7287fd"},
+      "text": {"hex": "#4c4f69"},
+      "subtext1": {"hex": "#5c5f77"},
+      "overlay2": {"hex": "#7c7f93"},
+      "surface1": {"hex": "#bcc0cc"},
+      "surface0": {"hex": "#ccd0da"},
+      "base": {"hex": "#eff1f5"},
+      "mantle": {"hex": "#e6e9ef"}
+    }
+  },
+  "frappe": {
+    "name": "Frappé",
+    "dark": true,
+    "colors": {
+      "rosewater": {"hex": "#f2d5cf"},
+      "mauve": {"hex": "#ca9ee6"},
+      "red": {"hex": "#e78284"},
+      "yellow": {"hex": "#e5c890"},
+      "green": {"hex": "#a6d189"},
+      "blue": {"hex": "#8caaee"},
+      "lavender": {"hex": "#babbf1"},
+      "text": {"hex": "#c6d0f5"},
+      "subtext1": {"hex": "#b5bfe2"},
+      "overlay2": {"hex": "#949cbb"},
+      "surface1": {"hex": "#51576d"},
+      "surface0": {"hex": "#414559"},
+      "base": {"hex": "#303446"},
+      "mantle": {"hex": "#292c3c"}
+    }
+  },
+  "macchiato": {
+    "name": "Macchiato",
+    "dark": true,
+    "colors": {
+      "rosewater": {"hex": "#f4dbd6"},
+      "mauve": {"hex": "#c6a0f6"},
+      "red": {"hex": "#ed8796"},
+      "yellow": {"hex": "#eed49f"},
+      "green": {"hex": "#a6da95"},
+      "blue": {"hex": "#8aadf4"},
+      "lavender": {"hex": "#b7bdf8"},
+      "text": {"hex": "#cad3f5"},
+      "subtext1": {"hex": "#b8c0e0"},
+      "overlay2": {"hex": "#939ab7"},
+      "surface1": {"hex": "#494d64"},
+      "surface0": {"hex": "#363a4f"},
+      "base": {"hex": "#24273a"},
+      "mantle": {"hex": "#1e2030"}
+    }
+  },
+  "mocha": {
+    "name": "Mocha",
+    "dark": true,
+    "colors": {
+      "rosewater": {"hex": "#f5e0dc"},
+      "mauve": {"hex": "#cba6f7"},
+      "red": {"hex": "#f38ba8"},
+      "yellow": {"hex": "#f9e2af"},
+      "green": {"hex": "#a6e3a1"},
+      "blue": {"hex": "#89b4fa"},
+      "lavender": {"hex": "#b4befe"},
+      "text": {"hex": "#cdd6f4"},
+      "subtext1": {"hex": "#bac2de"},
+      "overlay2": {"hex": "#9399b2"},
+      "surface1": {"hex": "#45475a"},
+      "surface0": {"hex": "#313244"},
+      "base": {"hex": "#1e1e2e"},
+      "mantle": {"hex": "#181825"}
+    }
+  }
+}

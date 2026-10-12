@@ -17,6 +17,7 @@ Commands:
     current
     set <theme-id>
     install <owner/repo>
+    install catppuccin/palette --format catppuccin --variant <latte|frappe|macchiato|mocha>
 EOF
 
 }
