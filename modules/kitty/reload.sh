@@ -2,6 +2,6 @@
 
 kitty_reload() {
 
-    kitty @ set-colors "$HOME/.config/kitty/current-theme.conf"
+    kitty @ set-colors --all --configured "$HOME/.config/kitty/current-theme.conf"
 
 }

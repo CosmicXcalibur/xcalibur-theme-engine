@@ -90,7 +90,10 @@ EOF
 
 TEST_RELOADS=""
 gtk_reload() { TEST_RELOADS+=" gtk"; [[ "${TEST_FAIL_RELOAD:-}" != gtk ]]; }
-kitty_reload() { TEST_RELOADS+=" kitty"; [[ "${TEST_FAIL_RELOAD:-}" != kitty ]]; }
+kitty() {
+    printf '%s\n' "$@" > "$TEST_ROOT/kitty-call"
+    [[ "${TEST_FAIL_RELOAD:-}" != kitty ]]
+}
 swaync_reload() { TEST_RELOADS+=" swaync"; [[ "${TEST_FAIL_RELOAD:-}" != swaync ]]; }
 waybar_reload() { TEST_RELOADS+=" waybar"; [[ "${TEST_FAIL_RELOAD:-}" != waybar ]]; }
 wofi_reload() { TEST_RELOADS+=" wofi"; [[ "${TEST_FAIL_RELOAD:-}" != wofi ]]; }
@@ -119,12 +122,37 @@ assert_no_transactions() {
 # Existing and absent destinations are both part of a successful apply.
 printf 'previous kitty\n' > "$HOME/.config/kitty/current-theme.conf"
 chmod 600 "$HOME/.config/kitty/current-theme.conf"
+printf 'allow_remote_control yes\nfont_size 12\n' > "$HOME/.config/kitty/kitty.conf"
+chmod 600 "$HOME/.config/kitty/kitty.conf"
 mkdir -m 700 -p "$HOME/.cache/cwal/schemes"
 printf 'unrelated scheme\n' > "$HOME/.cache/cwal/schemes/keep.cwal"
 printf 'previous scheme\n' > "$HOME/.cache/cwal/schemes/shared.cwal"
+TEST_FAIL_RELOAD=kitty
+run_fail theme_set set native-fixture
+unset TEST_FAIL_RELOAD
+contains "Required reload failed for module 'kitty'"
+[[ "$(< "$HOME/.config/kitty/kitty.conf")" == $'allow_remote_control yes\nfont_size 12' ]] ||
+    fail 'failed reload changed the original Kitty main config'
+[[ "$(< "$HOME/.config/kitty/current-theme.conf")" == 'previous kitty' ]] ||
+    fail 'failed reload changed the original Kitty theme file'
+[[ "$(< "$CURRENT_THEME_FILE")" == old-theme ]] || fail 'failed reload changed active state'
+assert_no_transactions
 theme_set set native-fixture > "$TEST_ROOT/output"
 [[ "$(< "$CURRENT_THEME_FILE")" == native-fixture ]] || fail 'active state was not committed'
 rg -F 'background #101010' "$HOME/.config/kitty/current-theme.conf" > /dev/null || fail 'Kitty output was not installed'
+rg -F 'allow_remote_control yes' "$HOME/.config/kitty/kitty.conf" > /dev/null || fail 'Kitty remote control setting changed'
+rg -F 'font_size 12' "$HOME/.config/kitty/kitty.conf" > /dev/null || fail 'unrelated Kitty setting changed'
+[[ "$(rg -c '^include current-theme\.conf$' "$HOME/.config/kitty/kitty.conf")" == 1 ]] ||
+    fail 'Kitty theme include missing or duplicated'
+[[ "$(stat -c %a "$HOME/.config/kitty/kitty.conf")" == 600 ]] || fail 'Kitty main config mode changed'
+mapfile -t kitty_args < "$TEST_ROOT/kitty-call"
+[[ "${#kitty_args[@]}" -eq 5 && "${kitty_args[0]}" == @ && "${kitty_args[1]}" == set-colors &&
+   "${kitty_args[2]}" == --all && "${kitty_args[3]}" == --configured &&
+   "${kitty_args[4]}" == "$HOME/.config/kitty/current-theme.conf" ]] ||
+    fail 'Kitty reload did not target all windows and configured colors'
+theme_set set native-fixture > "$TEST_ROOT/output"
+[[ "$(rg -c '^include current-theme\.conf$' "$HOME/.config/kitty/kitty.conf")" == 1 ]] ||
+    fail 'repeated theme application duplicated Kitty include'
 [[ -f "$HOME/.config/waybar/styles/colors/xcalibur.css" ]] || fail 'new Waybar output was not installed'
 [[ -f "$HOME/.config/gtk-3.0/gtk.css" && -f "$HOME/.config/gtk-4.0/gtk.css" ]] || fail 'GTK outputs missing'
 [[ -f "$HOME/.config/hypr/hyprlock.conf" && -f "$HOME/.config/swaync/style.css" ]] || fail 'other module outputs missing'
@@ -144,12 +172,59 @@ fingerprint() {
 }
 baseline="$(fingerprint)"
 baseline_kitty_mode="$(stat -c %a "$HOME/.config/kitty/current-theme.conf")"
+baseline_kitty_main_mode="$(stat -c %a "$HOME/.config/kitty/kitty.conf")"
 assert_baseline() {
     [[ "$(fingerprint)" == "$baseline" ]] || fail 'failure did not restore all owned files and state'
     [[ "$(stat -c %a "$HOME/.config/kitty/current-theme.conf")" == "$baseline_kitty_mode" ]] ||
         fail 'rollback did not restore Kitty permissions'
+    [[ "$(stat -c %a "$HOME/.config/kitty/kitty.conf")" == "$baseline_kitty_main_mode" ]] ||
+        fail 'rollback did not restore Kitty main config permissions'
     assert_no_transactions
 }
+
+# A missing main config is created only on commit; failure removes it again.
+mv "$HOME/.config/kitty/kitty.conf" "$TEST_ROOT/kitty-main.saved"
+TEST_FAIL_RELOAD=kitty
+run_fail theme_set set old-theme
+unset TEST_FAIL_RELOAD
+[[ ! -e "$HOME/.config/kitty/kitty.conf" ]] || fail 'rollback left a new Kitty main config'
+mv "$TEST_ROOT/kitty-main.saved" "$HOME/.config/kitty/kitty.conf"
+assert_baseline
+
+# Config input and destination checks reject symlinks and unexpected objects.
+printf 'outside Kitty settings\n' > "$TEST_ROOT/kitty-outside.conf"
+mv "$HOME/.config/kitty/kitty.conf" "$TEST_ROOT/kitty-main.saved"
+ln -s "$TEST_ROOT/kitty-outside.conf" "$HOME/.config/kitty/kitty.conf"
+run_fail theme_set set old-theme
+contains 'unsafe or oversized Kitty config'
+[[ "$(< "$TEST_ROOT/kitty-outside.conf")" == 'outside Kitty settings' ]] || fail 'Kitty symlink target changed'
+rm -- "$HOME/.config/kitty/kitty.conf"
+mv "$TEST_ROOT/kitty-main.saved" "$HOME/.config/kitty/kitty.conf"
+assert_baseline
+
+mv "$HOME/.config/kitty/current-theme.conf" "$TEST_ROOT/kitty-theme.saved"
+ln -s "$TEST_ROOT/kitty-outside.conf" "$HOME/.config/kitty/current-theme.conf"
+run_fail theme_set set old-theme
+contains 'unsafe filesystem object'
+[[ "$(< "$TEST_ROOT/kitty-outside.conf")" == 'outside Kitty settings' ]] || fail 'Kitty theme symlink target changed'
+rm -- "$HOME/.config/kitty/current-theme.conf"
+mv "$TEST_ROOT/kitty-theme.saved" "$HOME/.config/kitty/current-theme.conf"
+assert_baseline
+mv "$HOME/.config/kitty/kitty.conf" "$TEST_ROOT/kitty-main.saved"
+mkdir "$HOME/.config/kitty/kitty.conf"
+run_fail theme_set set old-theme
+contains 'unsafe or oversized Kitty config'
+rmdir "$HOME/.config/kitty/kitty.conf"
+mv "$TEST_ROOT/kitty-main.saved" "$HOME/.config/kitty/kitty.conf"
+assert_baseline
+
+# A repeated include is reported rather than silently changing user settings.
+cp "$HOME/.config/kitty/kitty.conf" "$TEST_ROOT/kitty-main.saved"
+printf 'include current-theme.conf\n' >> "$HOME/.config/kitty/kitty.conf"
+run_fail theme_set set old-theme
+contains 'duplicate Kitty theme includes'
+cp "$TEST_ROOT/kitty-main.saved" "$HOME/.config/kitty/kitty.conf"
+assert_baseline
 
 # CWAL's real output layout includes schemes/. A changed scheme and a newly
 # created scheme must both roll back without disturbing another cache entry.

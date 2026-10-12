@@ -22,6 +22,7 @@ VERSION = 1
 MAX_JOURNAL = 1_000_000
 APP_PATHS = (
     "kitty/current-theme.conf",
+    "kitty/kitty.conf",
     "waybar/styles/colors/xcalibur.css",
     "wofi/style.css",
     "gtk-3.0/gtk.css",

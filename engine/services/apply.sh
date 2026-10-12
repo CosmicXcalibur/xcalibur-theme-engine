@@ -112,6 +112,7 @@ theme_apply() (
         return 1
     fi
     stage="$txn/stage"
+    THEME_TXN_STAGE_DIR="$stage"
     if ! mkdir -m 700 -- "$stage/generated" "$stage/cwal"; then
         theme_apply_failure "$txn" "Unable to create theme preparation directories."
         return 1

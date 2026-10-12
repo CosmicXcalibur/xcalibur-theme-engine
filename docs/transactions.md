@@ -9,7 +9,8 @@ data and templates are parsed as data; they are never sourced as shell code.
 
 The transaction covers the files Xcalibur writes: top-level cwal cache files,
 regular files inside cwal's `schemes/` cache directory, all
-`runtime/generated/` outputs, Kitty, Waybar, Wofi, GTK 3 and 4, Hyprlock and
+`runtime/generated/` outputs, Kitty's theme fragment and main `kitty.conf`,
+Waybar, Wofi, GTK 3 and 4, Hyprlock and
 SwayNC configuration fragments, legacy Hyprlock and SwayNC backup files when
 created, and the active theme or wallpaper state being changed. It records
 which files existed, preserves existing file modes and timestamps for rollback,
@@ -33,6 +34,16 @@ reload the previous wallpaper after restoring files. A running application
 may already have observed new colors or a process restart. Restoring files
 cannot reverse every external effect, and rollback does not kill or restart
 applications to attempt that reversal.
+
+Kitty's generated colors are installed as `~/.config/kitty/current-theme.conf`.
+The engine stages a copy of the existing `kitty.conf`, preserving its settings
+and file mode, and ensures one `include current-theme.conf` appears last so the
+colors load on restart. Both files are snapshotted and rolled back together.
+For the current Kitty instance, `kitty @ set-colors --all --configured` applies
+the fragment to all its windows and its configured colors. The command must
+be able to reach a Kitty instance with remote control enabled; a nonzero exit
+causes transaction rollback. A live Kitty process may retain colors it saw
+before rollback, as with other external reload effects.
 
 The active state is written with an atomic file replacement only after the
 required reload calls return successfully. A failed write, copy, directory
