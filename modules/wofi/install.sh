@@ -13,3 +13,7 @@ wofi_install() {
         "$HOME/.config/wofi/style.css"
 
 }
+
+wofi_transaction_plan() {
+    theme_txn_plan "$GENERATED_DIR/wofi.css" "$HOME/.config/wofi/style.css"
+}

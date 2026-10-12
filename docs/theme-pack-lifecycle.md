@@ -61,6 +61,8 @@ executed. The installer copies only the two native files, creates the
 destination exclusively, and cleans a partial destination created by that
 attempt on failure. The theme library should remain a trusted local directory;
 do not let another user modify it concurrently with theme management.
+Theme application uses the staged filesystem transaction described in
+[transactions and recovery](transactions.md).
 
 ## Tests
 

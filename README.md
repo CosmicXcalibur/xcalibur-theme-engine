@@ -26,7 +26,7 @@ The project is designed around a layered architecture to keep the engine scalabl
 
 Current Release:
 
-**v0.1.0 CLI version; external palette adapters and theme-pack lifecycle management completed.**
+**v0.1.0 CLI version; external adapters, theme-pack lifecycle, and transactional application completed.**
 
 ---
 
@@ -74,6 +74,7 @@ theme/
 - Catppuccin, Rosé Pine, and Nord palette imports
 - Validated semantic palette overlays on the existing CWAL color pipeline
 - Inspection, validation, inventory, and safe removal of installed packs
+- Staged theme application with filesystem rollback and explicit recovery
 
 See [the roadmap](ROADMAP.md) for planned work and
 [external adapter documentation](docs/external-adapters.md) for sources,
@@ -96,6 +97,8 @@ theme validate <theme-id>
 theme validate --all
 theme set <theme-id>
 theme remove <theme-id>
+theme recover --list
+theme recover [transaction-id]
 ```
 
 Installation validates and stores a theme. `theme set` selects and applies it.
@@ -105,6 +108,10 @@ semantic colors; `theme validate --all` reports every pack and exits nonzero if
 any is invalid. `theme remove` deletes only an inactive pack and never switches
 themes. See [theme-pack lifecycle](docs/theme-pack-lifecycle.md) for output,
 failure behavior, and security limits; use `theme help` for command syntax.
+Theme selection and wallpaper application prepare outputs before installing
+them, restore owned files and state after ordinary failures, and report an
+incomplete transaction for explicit recovery. See
+[transactions and recovery](docs/transactions.md) for guarantees and limits.
 
 ---
 

@@ -127,7 +127,24 @@ Completed on `develop` independently of the version milestones above:
 - Commands, validation limits, and removal behavior are documented in
   [Theme-pack lifecycle](docs/theme-pack-lifecycle.md).
 
-Next: Phase 6 reliability and rollback.
+---
+
+# Phase 6 ✅ Reliability, Transactions and Rollback
+
+Completed on `develop` independently of the version milestones above:
+
+- Theme selection and wallpaper application render into private staging,
+  validate outputs, snapshot every owned destination, install, reload, and
+  commit state after required reload calls succeed.
+- Ordinary failures restore prior files, modes, timestamps, and missing-file
+  states; failed rollback retains authenticated recovery artifacts.
+- `theme recover` detects interrupted transactions, validates journals and
+  snapshots, and requires explicit recovery before another application.
+- Temporary-home tests inject failures during preparation, installation,
+  state updates, reload, rollback, cleanup, and recovery without touching the
+  live desktop.
+- Guarantees and limits are documented in
+  [Transactions and recovery](docs/transactions.md).
 
 ---
 

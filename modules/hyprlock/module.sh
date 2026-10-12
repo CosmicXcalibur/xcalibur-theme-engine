@@ -8,7 +8,7 @@ hyprlock_render() {
 
     render_template \
         "$MODULES_DIR/hyprlock/templates/hyprlock.conf.template" \
-        "$GENERATED_DIR/hyprlock.conf"
+        "$GENERATED_DIR/hyprlock.conf" || return 1
 
     # Hyprlock expects RGB values without the leading '#'
     # while Xcalibur's runtime palette uses #RRGGBB.

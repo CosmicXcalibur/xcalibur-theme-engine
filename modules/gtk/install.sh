@@ -19,3 +19,8 @@ gtk_install() {
         "$GENERATED_DIR/gtk-4.0.css" \
         "$gtk4_dir/gtk.css"
 }
+
+gtk_transaction_plan() {
+    theme_txn_plan "$GENERATED_DIR/gtk-3.0.css" "$HOME/.config/gtk-3.0/gtk.css" || return 1
+    theme_txn_plan "$GENERATED_DIR/gtk-4.0.css" "$HOME/.config/gtk-4.0/gtk.css"
+}

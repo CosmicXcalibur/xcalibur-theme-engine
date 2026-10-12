@@ -21,7 +21,10 @@ source "$REPOSITORY_ROOT/engine/lib/theme_install.sh"
 source "$REPOSITORY_ROOT/engine/commands/theme.sh"
 
 TEST_APPLY_CALLED=0
-theme_apply() { TEST_APPLY_CALLED=1; }
+theme_apply() {
+    TEST_APPLY_CALLED=1
+    printf '%s\n' "$1" > "$CURRENT_THEME_FILE"
+}
 fail() { printf 'FAIL: %s\n' "$*" >&2; exit 1; }
 run_fail() {
     if "$@" > "$TEST_ROOT/output" 2>&1; then

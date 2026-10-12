@@ -19,3 +19,12 @@ hyprlock_install() {
         "$GENERATED_DIR/hyprlock.conf" \
         "$target"
 }
+
+hyprlock_transaction_plan() {
+    local target="$HOME/.config/hypr/hyprlock.conf"
+    local backup="$target.xcalibur-backup"
+    if [[ -f "$target" && ! -e "$backup" && ! -L "$backup" ]]; then
+        theme_txn_plan "$target" "$backup" || return 1
+    fi
+    theme_txn_plan "$GENERATED_DIR/hyprlock.conf" "$target"
+}

@@ -86,7 +86,7 @@ main() {
             command_status
             ;;
 
-        list|info|validate|install|set|remove|current)
+        list|info|validate|install|set|remove|recover|current)
             command_theme "$@"
             ;;
 

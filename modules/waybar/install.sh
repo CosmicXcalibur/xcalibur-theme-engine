@@ -9,3 +9,7 @@ waybar_install() {
         "$HOME/.config/waybar/styles/colors/xcalibur.css"
 
 }
+
+waybar_transaction_plan() {
+    theme_txn_plan "$GENERATED_DIR/xcalibur.css" "$HOME/.config/waybar/styles/colors/xcalibur.css"
+}

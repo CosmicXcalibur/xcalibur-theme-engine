@@ -4,7 +4,8 @@ waybar_reload() {
 
     if pgrep -x waybar >/dev/null 2>&1; then
         if ! pkill -x waybar; then
-            log_warn "Unable to stop the running Waybar instance; continuing with reload."
+            log_warn "Unable to stop the running Waybar instance."
+            return 1
         fi
     fi
 
@@ -12,6 +13,6 @@ waybar_reload() {
         return 1
     fi
 
-    waybar >/dev/null 2>&1 &
+    ( if [[ -n "${THEME_TXN_LOCK_FD:-}" ]]; then exec {THEME_TXN_LOCK_FD}>&-; fi; waybar >/dev/null 2>&1 ) &
 
 }

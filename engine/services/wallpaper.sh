@@ -8,14 +8,7 @@ wallpaper_validate() {
 
     local wallpaper="$1"
 
-    [[ -f "$WALLPAPER_DIR/$wallpaper" ]]
-}
-
-wallpaper_save_state() {
-
-    local wallpaper="$1"
-
-    echo "$wallpaper" > "$STATE_DIR/current_wallpaper"
+    [[ "$wallpaper" != */* && "$wallpaper" != .* && -f "$WALLPAPER_DIR/$wallpaper" && ! -L "$WALLPAPER_DIR/$wallpaper" ]]
 }
 
 wallpaper_reload() {
@@ -100,11 +93,10 @@ wallpaper_set() {
 
     local fullpath="$WALLPAPER_DIR/$wallpaper"
 
-    wallpaper_save_state "$fullpath"
-
-    wallpaper_reload "$fullpath"
-
-    theme_apply
+    if ! theme_apply __current__ "$fullpath"; then
+        log_error "Unable to apply wallpaper '$wallpaper'."
+        return 1
+    fi
 
     log_success "Wallpaper updated."
 

@@ -9,3 +9,7 @@ kitty_install() {
         "$HOME/.config/kitty/current-theme.conf"
 
 }
+
+kitty_transaction_plan() {
+    theme_txn_plan "$GENERATED_DIR/kitty.conf" "$HOME/.config/kitty/current-theme.conf"
+}

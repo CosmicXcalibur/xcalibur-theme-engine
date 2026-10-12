@@ -20,6 +20,7 @@ Commands:
     validate --all
     set <theme-id>
     remove <theme-id>
+    recover [--list|transaction-id]
     install <owner/repo>
     install catppuccin/palette --format catppuccin --variant <latte|frappe|macchiato|mocha>
     install rose-pine/rose-pine-palette --format rose-pine --variant <main|moon|dawn>
@@ -29,6 +30,7 @@ Examples:
     theme info catppuccin-mocha
     theme validate --all
     theme remove nord
+    theme recover --list
     theme install catppuccin/palette --format catppuccin --variant mocha
     theme install rose-pine/rose-pine-palette --format rose-pine --variant moon
     theme install nordtheme/nord --format nord
