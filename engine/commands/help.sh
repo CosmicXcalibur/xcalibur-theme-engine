@@ -20,9 +20,12 @@ Commands:
     wallpaper help|list|current|random|set <file>
     palette generate
     render <module>
-    import analyze|preview <owner/repo|github-url>
-    import convert <owner/repo|github-url> <new-output-directory>
+    import analyze|preview <owner/repo|github-url|local-path>
+    import convert <owner/repo|github-url|local-path> <new-output-directory>
     import install <pack-directory>
+
+Import preview and convert do not install or activate a theme.
+Use an absolute path or ./relative-path for a local source.
 EOF
 
 }

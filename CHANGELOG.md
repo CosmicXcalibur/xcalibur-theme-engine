@@ -10,6 +10,7 @@ This project follows the Keep a Changelog format.
 
 ### Added
 
+- Local directory and Git source import, license evidence, conversion provenance, raw ANSI preservation, and installation conflict preview.
 - Authoritative `make check` runner, CI workflow, Python unit tests, and failure propagation probe.
 - GitHub import preview, data-only conversion, explicit local installation, and Hyprlock color adapter.
 - Explicit-prefix package installation and ownership-checked uninstall.

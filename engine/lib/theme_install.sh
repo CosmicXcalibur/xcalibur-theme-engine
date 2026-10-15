@@ -7,7 +7,7 @@
 theme_install_repo_validate() {
     local repository="$1"
 
-    [[ "$repository" =~ ^[A-Za-z0-9][A-Za-z0-9-]{0,38}/[A-Za-z0-9][A-Za-z0-9._-]*$ ]] ||
+    [[ "$repository" =~ ^[A-Za-z0-9][A-Za-z0-9-]{0,38}/[A-Za-z0-9][A-Za-z0-9._-]{0,99}$ ]] ||
         return 1
 
     [[ "$repository" != *..* ]]
@@ -27,9 +27,9 @@ theme_install_rollback() {
         log_warn "Partial theme directory needs manual cleanup: $theme_dir"
         return 1
     fi
-    # Only these two names are created by the installer. Leave an unexpected
+    # Only these names are created by the installer. Leave an unexpected
     # directory entry untouched rather than recursively removing it.
-    if ! rm -f -- "$theme_dir/theme.conf" "$theme_dir/palette.conf" ||
+    if ! rm -f -- "$theme_dir/theme.conf" "$theme_dir/palette.conf" "$theme_dir/source.json" ||
        ! rmdir -- "$theme_dir"; then
         log_warn "Partial theme directory needs manual cleanup: $theme_dir"
         return 1
@@ -39,6 +39,7 @@ theme_install_rollback() {
 # Install only validated root data files from a local, reviewable pack.
 theme_install_from_directory() (
     local source_dir="$1" theme_id theme_dir="" destination_created=false complete=false
+    local has_source_metadata=false
     theme_install_local_cleanup() {
         local result=$?
         trap - EXIT
@@ -67,6 +68,15 @@ theme_install_from_directory() (
         log_error "Invalid theme palette: $THEME_DEFINITION_ERROR"
         return 1
     fi
+    if [[ -e "$source_dir/source.json" || -L "$source_dir/source.json" ]]; then
+        if ! theme_install_root_file_validate "$source_dir/source.json" ||
+           ! cmd_exists python3 ||
+           ! python3 "$ENGINE_DIR/importer/convert.py" validate-metadata "$source_dir/source.json" "$theme_id"; then
+            log_error "Invalid or unsafe source metadata: $source_dir/source.json"
+            return 1
+        fi
+        has_source_metadata=true
+    fi
     theme_dir="$THEMES_DIR/$theme_id"
     if [[ "$THEMES_DIR" != "$THEME_ROOT/themes" ]] ||
        ! fs_directory_safe "$THEMES_DIR" true; then
@@ -83,9 +93,19 @@ theme_install_from_directory() (
     fi
     destination_created=true
     if ! cp -- "$source_dir/theme.conf" "$theme_dir/theme.conf" ||
-       ! cp -- "$source_dir/palette.conf" "$theme_dir/palette.conf" ||
-       ! theme_manifest_load "$theme_dir/theme.conf" "$theme_id" ||
-       ! theme_definition_load "$theme_dir/palette.conf" "$theme_id"; then
+       ! cp -- "$source_dir/palette.conf" "$theme_dir/palette.conf"; then
+        log_error "Unable to install validated theme '$theme_id'."
+        return 1
+    fi
+    if [[ "$has_source_metadata" == true ]] &&
+       ! cp -- "$source_dir/source.json" "$theme_dir/source.json"; then
+        log_error "Unable to install source metadata for '$theme_id'."
+        return 1
+    fi
+    if ! theme_manifest_load "$theme_dir/theme.conf" "$theme_id" ||
+       ! theme_definition_load "$theme_dir/palette.conf" "$theme_id" ||
+       { [[ "$has_source_metadata" == true ]] &&
+           ! python3 "$ENGINE_DIR/importer/convert.py" validate-metadata "$theme_dir/source.json" "$theme_id"; }; then
         log_error "Unable to install validated theme '$theme_id'."
         return 1
     fi

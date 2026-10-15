@@ -4,6 +4,7 @@
 Adapters extract data only. No source configuration is executed or copied.
 """
 
+import hashlib
 import json
 import os
 import re
@@ -19,10 +20,12 @@ MAX_FILE_SIZE = 256 * 1024
 MAX_TOTAL_BYTES = 4 * 1024 * 1024
 MAX_UNSUPPORTED = 2000
 MAX_SECONDS = 10
+MAX_LICENSE_SIZE = 32768
+MAX_LICENSE_FILES = 4
 HEX = re.compile(r"^#[0-9a-fA-F]{6}$")
 KITTY = re.compile(r"^\s*(background|foreground|cursor|selection_background|selection_foreground|color(?:[0-9]|1[0-5]))\s+(\S+)")
 CSS = re.compile(r"(?:^|[;\s])(?:--([a-zA-Z][\w-]*)\s*:|@define-color\s+([a-zA-Z][\w-]*)\s+)([^;\n]+)")
-PALETTE = re.compile(r"^\s*([A-Z][A-Z_]*)=(\S+)\s*$")
+PALETTE = re.compile(r"^\s*([A-Z][A-Z0-9_]*)=(\S+)\s*$")
 HYPRLOCK_COLOR = re.compile(r"^[ \t]*([a-z][a-z_-]*)[ \t]*=[ \t]*rgba\(([0-9a-fA-F]{8})\)[ \t]*$", re.MULTILINE)
 ROLES = {
     "background": "BACKGROUND", "bg": "BACKGROUND", "base": "BACKGROUND",
@@ -49,8 +52,20 @@ def application(path):
     return None
 
 
-def adapter(path, content):
+def adapter_detailed(path, content):
     lower = path.lower()
+    occurrences = []
+    diagnostics = []
+    def record(colors, key, raw, kind):
+        color = normalize_color(raw)
+        if color is None:
+            diagnostics.append({"path": path, "construct": key,
+                                "reason": f"unsupported_{kind}_color_value"})
+            return
+        if key in colors:
+            diagnostics.append({"path": path, "construct": key, "reason": "duplicate_color_key"})
+        colors[key] = color
+        occurrences.append((key, color))
     if "hyprlock" in lower and lower.endswith(".conf"):
         colors = {}
         section = ""
@@ -65,54 +80,71 @@ def adapter(path, content):
                 if match and match.group(2)[6:].lower() == "ff":
                     key = match.group(1).lower().replace("-", "_")
                     key = "background" if section == "background" and key == "color" else f"{section}_{key}".strip("_")
-                    colors[key] = "#" + match.group(2)[:6].upper()
-        return "hyprlock", colors
+                    record(colors, key, "#" + match.group(2)[:6], "hyprlock")
+                elif match:
+                    diagnostics.append({"path": path, "construct": match.group(1),
+                                        "reason": "nonopaque_hyprlock_color"})
+                elif "rgba(" in line and "=" in line:
+                    diagnostics.append({"path": path, "construct": section or "hyprlock",
+                                        "reason": "unsupported_hyprlock_color_value"})
+        return "hyprlock", colors, occurrences, diagnostics
     if lower.endswith(".css"):
         colors = {}
         for match in CSS.finditer(content):
             name = (match.group(1) or match.group(2)).lower().replace("-", "_")
-            color = normalize_color(match.group(3))
-            if color:
-                colors[name] = color
-        return "css", colors
+            record(colors, name, match.group(3), "css")
+        return "css", colors, occurrences, diagnostics
     if lower.endswith(".conf") or lower.endswith(".theme"):
         kitty = {}
         palette = {}
         for line in content.splitlines():
             match = KITTY.match(line)
             if match:
-                color = normalize_color(match.group(2))
-                if color:
-                    kitty[match.group(1)] = color
+                record(kitty, match.group(1), match.group(2), "kitty")
             match = PALETTE.match(line)
             if match:
-                color = normalize_color(match.group(2))
-                if color:
-                    palette[match.group(1).lower()] = color
+                record(palette, match.group(1).lower(), match.group(2), "palette")
         if kitty and ("kitty" in lower or len(kitty) >= 3):
-            return "kitty", kitty
+            return "kitty", kitty, [(key, value) for key, value in occurrences if key in kitty], diagnostics
         if palette and ("palette" in lower or "colors" in lower):
-            return "palette", palette
-    return None, {}
+            return "palette", palette, [(key, value) for key, value in occurrences if key in palette], diagnostics
+        if "kitty" in lower and ("kitty" in lower or "colors" in lower):
+            return "kitty", kitty, occurrences, diagnostics
+        if "palette" in lower or "colors" in lower:
+            return "palette", palette, occurrences, diagnostics
+    return None, {}, [], []
 
 
-def unsupported_values(path, content, kind):
-    if kind == "css":
-        for match in CSS.finditer(content):
-            if normalize_color(match.group(3)) is None:
-                yield {"path": path, "construct": match.group(1) or match.group(2),
-                       "reason": "unsupported_css_color_value"}
-    elif kind == "hyprlock":
-        for match in HYPRLOCK_COLOR.finditer(content):
-            if match.group(2)[6:].lower() != "ff":
-                yield {"path": path, "construct": match.group(1),
-                       "reason": "nonopaque_hyprlock_color"}
-    elif kind == "kitty":
-        for line in content.splitlines():
-            match = KITTY.match(line)
-            if match and normalize_color(match.group(2)) is None:
-                yield {"path": path, "construct": match.group(1),
-                       "reason": "unsupported_kitty_color_value"}
+def adapter(path, content):
+    kind, colors, _, _ = adapter_detailed(path, content)
+    return kind, colors
+
+
+def license_evidence(path, relative):
+    try:
+        descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+        try:
+            info = os.fstat(descriptor)
+            if not stat.S_ISREG(info.st_mode) or info.st_size > MAX_LICENSE_SIZE:
+                return {"path": relative, "status": "unreadable_or_oversized"}
+            chunks = []
+            remaining = MAX_LICENSE_SIZE + 1
+            while remaining:
+                chunk = os.read(descriptor, min(65536, remaining))
+                if not chunk:
+                    break
+                chunks.append(chunk)
+                remaining -= len(chunk)
+            data = b"".join(chunks)
+        finally:
+            os.close(descriptor)
+        if len(data) > MAX_LICENSE_SIZE or len(data) != info.st_size:
+            return {"path": relative, "status": "unreadable_or_oversized"}
+        content = data.decode("utf-8")
+        return {"path": relative, "status": "captured", "sha256": hashlib.sha256(data).hexdigest(),
+                "text": content}
+    except (OSError, UnicodeError):
+        return {"path": relative, "status": "unreadable_or_oversized"}
 
 
 def bounded_walk(root, report, started):
@@ -157,20 +189,26 @@ def bounded_walk(root, report, started):
         yield current, names
 
 
-def analyze(root, repository, revision):
+def analyze(root, repository, revision, source_kind="github", source_url=None):
     started = time.monotonic()
+    if not root.is_absolute() or not root.is_dir() or any(
+            parent.is_symlink() for parent in (root, *root.parents)):
+        raise ValueError("unsafe or missing source directory")
     report = {
         "schema": 1,
         "repository": repository,
         "revision": revision,
+        "source_kind": source_kind,
+        "source_url": source_url or (f"https://github.com/{repository}" if source_kind == "github" else None),
         "retrieval": "complete",
         "mode": "analysis_only",
         "limits": {"files": MAX_FILES, "directories": MAX_DIRECTORIES,
                    "depth": MAX_DEPTH, "file_bytes": MAX_FILE_SIZE,
                    "total_bytes": MAX_TOTAL_BYTES, "seconds": MAX_SECONDS},
         "inventory": [], "semantic_roles": {}, "conflicts": [], "skipped": [],
+        "raw_ansi": [],
         "unsupported_constructs": [],
-        "license_files": [], "application_configs_converted": 0,
+        "license_files": [], "licenses": [], "application_configs_converted": 0,
         "theme_pack_generated": False, "installed": False, "applied": False,
     }
     candidates = {}
@@ -195,6 +233,8 @@ def analyze(root, repository, revision):
             if not stat.S_ISREG(info.st_mode):
                 report["skipped"].append({"path": relative, "reason": "not_regular_file"})
                 continue
+            if relative in report["license_files"] and len(report["licenses"]) < MAX_LICENSE_FILES:
+                report["licenses"].append(license_evidence(path, relative))
             if info.st_size > MAX_FILE_SIZE:
                 report["skipped"].append({"path": relative, "reason": "file_size_limit"})
                 continue
@@ -218,8 +258,8 @@ def analyze(root, repository, revision):
                     content_bytes = b"".join(chunks)
                 finally:
                     os.close(descriptor)
-                if len(content_bytes) > MAX_FILE_SIZE:
-                    report["skipped"].append({"path": relative, "reason": "file_size_limit"})
+                if len(content_bytes) > MAX_FILE_SIZE or len(content_bytes) != opened.st_size:
+                    report["skipped"].append({"path": relative, "reason": "changed_or_oversized"})
                     continue
                 total_bytes += len(content_bytes)
                 if total_bytes > MAX_TOTAL_BYTES:
@@ -228,14 +268,16 @@ def analyze(root, repository, revision):
             except (OSError, UnicodeError):
                 report["skipped"].append({"path": relative, "reason": "unreadable_text"})
                 continue
-            kind, colors = adapter(relative, content)
-            for item in unsupported_values(relative, content, kind):
+            kind, colors, occurrences, diagnostics = adapter_detailed(relative, content)
+            for item in diagnostics:
                 if len(report["unsupported_constructs"]) < MAX_UNSUPPORTED:
                     report["unsupported_constructs"].append(item)
             if not kind or not colors:
                 continue
             roles = {}
-            for key, color in colors.items():
+            for key, color in occurrences:
+                if re.fullmatch(r"color(?:[0-9]|1[0-5])", key):
+                    report["raw_ansi"].append({"path": relative, "key": key, "value": color})
                 role = ROLES.get(key)
                 if role:
                     roles[role] = color
@@ -252,15 +294,27 @@ def analyze(root, repository, revision):
         else:
             report["conflicts"].append({"role": role, "sources": sources})
     report["files_examined"] = files
-    report["license_status"] = "review_required"
+    license_text = "\n".join(item.get("text", "") for item in report["licenses"]).lower()
+    if not report["license_files"]:
+        report["license_status"] = "missing"
+    elif len(report["license_files"]) > 1 or len(report["licenses"]) < len(report["license_files"]) or \
+            any(item["status"] != "captured" for item in report["licenses"]):
+        report["license_status"] = "ambiguous_or_incomplete"
+    elif any(term in license_text for term in ("all rights reserved", "non-commercial", "no redistribution")):
+        report["license_status"] = "restrictive_terms_found"
+    else:
+        report["license_status"] = "present_unverified"
     return report
 
 
 if __name__ == "__main__":
-    if len(sys.argv) != 4:
-        sys.exit("usage: analyze.py <checkout> <repository> <revision>")
+    if len(sys.argv) not in (4, 5):
+        sys.exit("usage: analyze.py <checkout> <repository> <revision> [local]")
     try:
-        print(json.dumps(analyze(Path(sys.argv[1]), sys.argv[2], sys.argv[3]), indent=2, sort_keys=True))
+        source_kind = sys.argv[4] if len(sys.argv) == 5 else "github"
+        if source_kind not in ("github", "local"):
+            raise ValueError("unsupported source kind")
+        print(json.dumps(analyze(Path(sys.argv[1]), sys.argv[2], sys.argv[3], source_kind), indent=2, sort_keys=True))
     except ValueError as exc:
         print(f"Import analysis failed: {exc}", file=sys.stderr)
         sys.exit(1)

@@ -4,7 +4,7 @@ Xcalibur is a Bash theme engine for Hyprland desktops. It changes a Hyprpaper wa
 
 ## Requirements and setup
 
-Run `engine/bin/theme` from this checkout. The CLI locates its repository from its own path. Bash, GNU coreutils, and standard shell tools are required. `wallpaper set` needs `cwal`, `hyprctl`, a running Hyprpaper session, and `timeout`. Import analysis, preview, and conversion need Git, Python 3, and `timeout`. Native GitHub pack installation needs Git and `timeout`. Application commands are needed only when their enabled integration reloads a running application. `theme doctor` distinguishes workflow requirements from optional tools.
+Run `engine/bin/theme` from this checkout. The CLI locates its repository from its own path. Bash, GNU coreutils, and standard shell tools are required. `wallpaper set` needs `cwal`, `hyprctl`, a running Hyprpaper session, and `timeout`. Import analysis, preview, and conversion need Python 3 and `timeout`; GitHub retrieval also needs Git. Installing a converted pack needs Python 3 to validate its metadata. Native GitHub pack installation needs Git and `timeout`. Application commands are needed only when their enabled integration reloads a running application. `theme doctor` distinguishes workflow requirements from optional tools.
 
 To install a copy under an existing user-writable prefix, run `python3 scripts/package.py install "$HOME/.local"`. This creates `$HOME/.local/share/xcalibur-theme-engine` and a `$HOME/.local/bin/theme` symlink, refusing collisions. If `$HOME/.local` does not exist, create it first. `python3 scripts/package.py uninstall "$HOME/.local"` removes that copy only when its manifest, files, and command symlink match; it refuses to erase edits, added files, or runtime data. Keep the checkout for development and run `make check` there. Package installation requires Python 3 and does not modify application styles or desktop settings.
 
@@ -26,9 +26,9 @@ theme install <owner/repo>
 theme wallpaper help|list|current|random|set <file>
 theme palette generate
 theme render <module>
-theme import analyze <owner/repo|https://github.com/owner/repo>
-theme import preview <owner/repo|https://github.com/owner/repo>
-theme import convert <owner/repo|https://github.com/owner/repo> <new-output-directory>
+theme import analyze <owner/repo|https://github.com/owner/repo|./local-directory>
+theme import preview <owner/repo|https://github.com/owner/repo|./local-directory>
+theme import convert <source> <new-output-directory>
 theme import install <pack-directory>
 ```
 
@@ -62,21 +62,20 @@ CWAL runs with an isolated config and output directory under `runtime/cache/`, `
 
 The Waybar file must be imported by your Waybar stylesheet; the Kitty file must be included by Kitty to persist colors across launches. Other listed files are whole engine-managed targets. Existing Hyprlock and SwayNC files receive one-time `.xcalibur-backup` copies, except when the target exactly matches the engine's previously generated output. The installer checks for symlinked targets and parent directories and replaces individual files atomically. Before multi-module installation it snapshots known targets, including backup files, and attempts to restore them on install, reload, or state-commit failure. An incomplete rollback is reported as an error. Waybar uses its documented [SIGUSR2 reload](https://github.com/Alexays/Waybar/blob/master/man/waybar.5.scd.in); SwayNC uses its documented [CSS reload client](https://github.com/ErikReider/SwayNotificationCenter).
 
-## GitHub import and conversion
+## External theme import and conversion
 
-The importer accepts public `owner/repo` references or HTTPS GitHub repository URLs with an optional trailing `.git`. It rejects query strings, fragment revisions, other hosts, and malformed names. The command clones without submodules into a private temporary directory and disables Git prompts, global/system configuration, hooks, and file protocol. Clone has a 60 second timeout. Repository files are scanned as data only. Scripts, templates, Makefiles, hooks, and application commands from the source repository are never executed.
+The importer accepts public `owner/repo` references, HTTPS GitHub repository URLs with an optional trailing `.git`, and local directories named with an absolute or `./relative` path. Local directories are read without a network clone; a local Git HEAD is recorded when available, otherwise the revision is `unversioned`. Local sources must remain unchanged during each command. GitHub input rejects query strings, fragment revisions, other hosts, and malformed names. The command clones without submodules into a private temporary directory and disables Git prompts, global/system configuration, hooks, and file protocol. Clone has a 60 second timeout. Repository files are scanned as data only. Scripts, templates, Makefiles, hooks, and application commands from the source repository are never executed.
 
-Supported color forms are literal six-digit hex values in Kitty assignments, CSS custom properties and GTK `@define-color`, simple palette `KEY=#RRGGBB` files, and opaque `rgba(RRGGBBff)` fields in Hyprlock configuration. Named colors, CSS expressions, partial alpha, short hex, shell expansions, and arbitrary app settings are not converted. Semantic names map by exact documented aliases in `engine/importer/analyze.py`; conflicting candidates remain unresolved. Analysis JSON contains source paths, format, application hint, confidence, candidates, conflicts, skipped files, and revision. Preview lists planned files and roles, conflicts, skipped count, and whether required background and foreground roles are unambiguous. Converted packs contain only `theme.conf` and `palette.conf`; no application configuration is copied.
+Supported color forms are literal six-digit hex values in Kitty assignments, CSS custom properties and GTK `@define-color`, simple palette `KEY=#RRGGBB` files, and opaque `rgba(RRGGBBff)` fields in Hyprlock configuration. Named colors, CSS expressions, partial alpha, short hex, shell expansions, and arbitrary app settings are not converted. Semantic names map by exact documented aliases in `engine/importer/analyze.py`; conflicting candidates remain unresolved. Duplicate keys and malformed literal colors are reported. Analysis JSON contains source paths, format, application hint, confidence, candidates, conflicts, skipped files, revision, and license evidence. Preview lists roles, conflicts, missing roles, license status, planned files, and existing theme ID conflicts. Converted packs contain `theme.conf`, `palette.conf`, and validated `source.json` provenance; no application configuration is copied. Raw ANSI `COLOR0` through `COLOR15` values remain in `source.json` with their source paths; they are not reinterpreted as semantic roles.
 
 ```sh
 engine/bin/theme import analyze owner/repo
-engine/bin/theme import preview owner/repo
-engine/bin/theme import convert owner/repo /tmp/my-new-pack
-engine/bin/theme import install /tmp/my-new-pack
-engine/bin/theme set owner-repo
+engine/bin/theme import preview ./local-theme
+engine/bin/theme import convert ./local-theme /tmp/review-local-theme
+engine/bin/theme import install /tmp/review-local-theme
 ```
 
-Conversion requires unambiguous `BACKGROUND` and `FOREGROUND`. It creates a new directory and refuses collisions. Explicit `import install` revalidates the pack with the native parser and refuses an installed ID collision. Analysis, preview, and conversion never install or apply a theme. Review the source license and generated files before installation or redistribution. Live GitHub retrieval has not been verified in the deterministic suite; local Git mocks and scanner fixtures are used. See [importer documentation](docs/importer.md).
+Conversion requires unambiguous `BACKGROUND` and `FOREGROUND`. It creates a new directory atomically and refuses collisions. Explicit `import install` revalidates the pack and its metadata, then refuses an installed ID collision. Analysis, preview, conversion, and installation never apply a theme; only a later `theme set <id>` does that. The license status is a review prompt, not permission to redistribute. Live GitHub retrieval has not been verified in the deterministic suite; local Git repositories and Git mocks are used. See [importer documentation](docs/importer.md).
 
 ## Security and limitations
 

@@ -151,4 +151,41 @@ printf 'user notification edit\n' > "$HOME/.config/swaync/style.css"
 "$cli" set xcalibur-test > "$CASE_DIR/user-edit-recovery.log"
 [[ "$(< "$HOME/.config/swaync/style.css.xcalibur-backup")" == 'user notification edit' ]]
 [[ ! -e "$HOME/.config/hypr/hyprlock.conf.xcalibur-backup" ]]
+
+# Public CLI import flow stays inside this disposable checkout and HOME.
+import_source="$CASE_DIR/source theme"
+mkdir -p "$import_source"
+printf 'background #102030\nforeground #E0E0E0\ncolor4 #445566\n' > "$import_source/kitty.conf"
+printf 'Review upstream license before redistribution.\n' > "$import_source/LICENSE"
+sha256sum -- "${targets[@]}" > "$CASE_DIR/import-application-before"
+GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 git -C "$import_source" init -q
+GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 git -C "$import_source" add kitty.conf LICENSE
+GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 git -C "$import_source" \
+    -c user.name=Fixture -c user.email=fixture@example.invalid -c commit.gpgsign=false \
+    commit -q -m 'Fixture colors'
+"$cli" import analyze "$import_source" > "$CASE_DIR/import-report.json"
+python3 - "$CASE_DIR/import-report.json" <<'PY'
+import json, sys
+report = json.load(open(sys.argv[1]))
+assert report['source_kind'] == 'local'
+assert report['semantic_roles']['BACKGROUND']['value'] == '#102030'
+assert report['license_status'] == 'present_unverified'
+PY
+"$cli" import preview "$import_source" > "$CASE_DIR/import-preview.txt"
+grep -q 'Planned theme ID: local-source-theme' "$CASE_DIR/import-preview.txt"
+grep -q 'Installation conflict: none detected' "$CASE_DIR/import-preview.txt"
+[[ ! -e "$CASE_DIR/checkout/themes/local-source-theme" ]]
+"$cli" import convert "$import_source" "$CASE_DIR/converted theme" > "$CASE_DIR/import-convert.txt"
+[[ -f "$CASE_DIR/converted theme/theme.conf" && -f "$CASE_DIR/converted theme/palette.conf" ]]
+python3 "$CASE_DIR/checkout/engine/importer/convert.py" validate-metadata \
+    "$CASE_DIR/converted theme/source.json" local-source-theme
+"$cli" import install "$CASE_DIR/converted theme" > "$CASE_DIR/import-install.txt"
+[[ -f "$CASE_DIR/checkout/themes/local-source-theme/source.json" ]]
+[[ "$(< "$CASE_DIR/checkout/runtime/state/current_theme")" == xcalibur-test ]]
+sha256sum -c "$CASE_DIR/import-application-before" > /dev/null
+if "$cli" import install "$CASE_DIR/converted theme" > "$CASE_DIR/import-collision.txt" 2>&1; then
+    printf 'Import installation collision unexpectedly succeeded\n' >&2
+    exit 1
+fi
+grep -q 'already installed' "$CASE_DIR/import-collision.txt"
 printf 'End-to-end isolated CLI workflow passed.\n'

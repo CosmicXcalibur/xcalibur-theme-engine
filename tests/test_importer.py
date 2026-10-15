@@ -1,10 +1,13 @@
 import importlib.util
+import hashlib
 import json
 import os
 import shutil
 import subprocess
+import sys
 import tempfile
 import unittest
+from unittest import mock
 from pathlib import Path
 
 
@@ -43,6 +46,12 @@ class ImporterTests(unittest.TestCase):
         self.assertEqual(converter.convert(report, output), "owner-example")
         self.assertIn("THEME_ID=owner-example", (output / "theme.conf").read_text())
         self.assertIn("ACCENT=#445566", (output / "palette.conf").read_text())
+        metadata = json.loads((output / "source.json").read_text())
+        self.assertEqual(metadata["source_url"], "https://github.com/Owner/example")
+        self.assertEqual(metadata["revision"], "a" * 40)
+        self.assertEqual(metadata["raw_ansi"], [{"path": "kitty.conf", "key": "color4",
+                                                 "value": "#ABCDEF"}])
+        self.assertEqual(metadata["role_sources"]["ACCENT"]["path"], "colors.css")
         with self.assertRaises(ValueError):
             converter.convert(report, output)
 
@@ -101,6 +110,124 @@ class ImporterTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "malformed"):
             converter.plan(report)
 
+    def test_duplicate_and_invalid_colors_are_reported(self):
+        source = self.root / "colors"
+        source.mkdir()
+        (source / "kitty.conf").write_text(
+            "background #112233\nbackground #445566\nforeground #GGGGGG\n")
+        report = analyzer.analyze(source, "Owner/example", "a" * 40)
+        self.assertNotIn("BACKGROUND", report["semantic_roles"])
+        self.assertEqual(report["conflicts"][0]["role"], "BACKGROUND")
+        reasons = {item["reason"] for item in report["unsupported_constructs"]}
+        self.assertIn("duplicate_color_key", reasons)
+        self.assertIn("unsupported_kitty_color_value", reasons)
+        with self.assertRaisesRegex(ValueError, "unambiguous"):
+            converter.convert(report, self.root / "should-not-exist")
+        self.assertFalse((self.root / "should-not-exist").exists())
+
+    def test_simple_palette_indices_remain_raw(self):
+        source = self.root / "simple"
+        source.mkdir()
+        (source / "palette.conf").write_text(
+            "BACKGROUND=#112233\nFOREGROUND=#EEEEEE\nCOLOR0=#000000\n"
+            "COLOR0=#010101\nCOLOR15=#FFFFFF\n")
+        report = analyzer.analyze(source, "Owner/example", "a" * 40)
+        output = self.root / "simple-pack"
+        converter.convert(report, output)
+        metadata = json.loads((output / "source.json").read_text())
+        self.assertEqual([item["key"] for item in metadata["raw_ansi"]],
+                         ["color0", "color0", "color15"])
+        self.assertEqual([item["value"] for item in metadata["raw_ansi"][:2]],
+                         ["#000000", "#010101"])
+        self.assertNotIn("COLOR0=", (output / "palette.conf").read_text())
+
+    def test_license_evidence_and_uncertain_permissions(self):
+        source = self.root / "licensed"
+        source.mkdir()
+        (source / "kitty.conf").write_text("background #112233\nforeground #eeeeee\n")
+        (source / "LICENSE").write_text("All rights reserved. No redistribution.\n")
+        report = analyzer.analyze(source, "Owner/example", "a" * 40)
+        self.assertEqual(report["license_status"], "restrictive_terms_found")
+        self.assertEqual(report["licenses"][0]["sha256"], hashlib.sha256(
+            (source / "LICENSE").read_bytes()).hexdigest())
+        self.assertIn("License action: inspect upstream terms", converter.preview(report))
+        output = self.root / "licensed-pack"
+        converter.convert(report, output)
+        metadata = json.loads((output / "source.json").read_text())
+        self.assertIn("No redistribution", metadata["licenses"][0]["text"])
+        self.assertEqual(metadata["license_paths"], ["LICENSE"])
+        self.assertEqual(metadata["license_file_count"], 1)
+        (source / "COPYING").write_text("Other terms\n")
+        self.assertEqual(analyzer.analyze(source, "Owner/example", "a" * 40)[
+            "license_status"], "ambiguous_or_incomplete")
+        (source / "LICENSE").unlink()
+        (source / "COPYING").unlink()
+        self.assertEqual(analyzer.analyze(source, "Owner/example", "a" * 40)[
+            "license_status"], "missing")
+        (source / "LICENSE").write_text("x" * (analyzer.MAX_LICENSE_SIZE + 1))
+        self.assertEqual(analyzer.analyze(source, "Owner/example", "a" * 40)[
+            "license_status"], "ambiguous_or_incomplete")
+
+    def test_metadata_and_output_paths_reject_malicious_data(self):
+        report = self.report()
+        report["licenses"] = [{"path": "../escape", "status": "unreadable_or_oversized"}]
+        with self.assertRaisesRegex(ValueError, "unsafe license path"):
+            converter.plan(report)
+        report["licenses"] = []
+        with self.assertRaisesRegex(ValueError, "unsafe output parent"):
+            converter.convert(report, self.root / "missing" / "pack")
+        (self.root / "archive.tar").write_bytes(b"not an archive")
+        self.assertEqual(analyzer.analyze(self.root, "Owner/example", "a" * 40)[
+            "files_examined"], 3)
+
+    def test_conversion_failure_and_interrupt_clean_stage(self):
+        report = self.report()
+        output = self.root / "pack"
+        with mock.patch.object(converter, "rename_exclusive", side_effect=OSError("blocked")):
+            with self.assertRaises(OSError):
+                converter.convert(report, output)
+        self.assertFalse(output.exists())
+        self.assertEqual(list(self.root.glob(".xcalibur-convert-*")), [])
+        with mock.patch.object(converter, "rename_exclusive", side_effect=KeyboardInterrupt):
+            with self.assertRaises(KeyboardInterrupt):
+                converter.convert(report, output)
+        self.assertEqual(list(self.root.glob(".xcalibur-convert-*")), [])
+        output.mkdir()
+        (output / "user-file").write_text("untouched")
+        with self.assertRaisesRegex(ValueError, "already exists"):
+            converter.convert(report, output)
+        self.assertEqual((output / "user-file").read_text(), "untouched")
+
+    def test_termination_during_conversion_cleans_stage(self):
+        report_path = self.root / "report.json"
+        report_path.write_text(json.dumps(self.report()))
+        output = self.root / "interrupted-pack"
+        script = """
+import importlib.util, os, signal, sys
+spec = importlib.util.spec_from_file_location('convert', sys.argv[1])
+module = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(module)
+module.rename_exclusive = lambda *_: os.kill(os.getpid(), signal.SIGTERM)
+sys.argv = ['convert.py', 'convert', sys.argv[2], sys.argv[3]]
+try:
+    module.main()
+except InterruptedError:
+    sys.exit(143)
+"""
+        result = subprocess.run([sys.executable, "-c", script,
+                                 str(ROOT / "engine/importer/convert.py"),
+                                 str(report_path), str(output)], capture_output=True, text=True)
+        self.assertEqual(result.returncode, 143, result.stderr)
+        self.assertFalse(output.exists())
+        self.assertEqual(list(self.root.glob(".xcalibur-convert-*")), [])
+
+    def test_source_root_symlink_is_rejected(self):
+        report = self.report()
+        alias = self.root / "alias"
+        alias.symlink_to(self.root / "source", target_is_directory=True)
+        with self.assertRaisesRegex(ValueError, "unsafe"):
+            analyzer.analyze(alias, "Owner/example", "a" * 40)
+
     def test_hyprlock_opaque_colors_only(self):
         source = self.root / "hyprlock.conf"
         source.write_text("background {\n color = rgba(112233ff)\n}\n"
@@ -110,6 +237,10 @@ class ImporterTests(unittest.TestCase):
         self.assertEqual(colors, {"background": "#112233"})
         report = analyzer.analyze(self.root, "Owner/example", "a" * 40)
         self.assertTrue(any(item["reason"] == "nonopaque_hyprlock_color"
+                            for item in report["unsupported_constructs"]))
+        source.write_text("background {\n color = rgba(ZZZZZZff)\n}\n")
+        report = analyzer.analyze(self.root, "Owner/example", "a" * 40)
+        self.assertTrue(any(item["reason"] == "unsupported_hyprlock_color_value"
                             for item in report["unsupported_constructs"]))
 
     @unittest.skipUnless(shutil.which("git"), "Git is unavailable")

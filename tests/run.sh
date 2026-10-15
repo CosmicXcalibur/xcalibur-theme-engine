@@ -574,4 +574,78 @@ command_import install "$TEST_TMP/converted pack"
 expect_failure 'import install collision' command_import install "$TEST_TMP/converted pack"
 [[ -z "$(find "$TMPDIR" -mindepth 1 -print -quit)" ]]
 
+# Exercise every public import stage against a committed local repository.
+PATH="${PATH#"$TEST_TMP/mock-bin:"}"
+export PATH
+local_repo="$TEST_TMP/local source"
+mkdir -p "$local_repo"
+printf 'background #102030\nforeground #E0E0E0\ncolor4 #445566\n' > "$local_repo/kitty.conf"
+printf 'All rights reserved. No redistribution.\n' > "$local_repo/LICENSE"
+GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 git -C "$local_repo" init -q
+GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 git -C "$local_repo" add kitty.conf LICENSE
+GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 git -C "$local_repo" \
+    -c user.name=Fixture -c user.email=fixture@example.invalid -c commit.gpgsign=false \
+    commit -q -m 'Fixture colors'
+command_import analyze "$local_repo" > "$TEST_TMP/local-report.json"
+ln -s "$local_repo" "$TEST_TMP/local-source-link"
+expect_failure 'symlinked local source rejected' command_import analyze "$TEST_TMP/local-source-link"
+printf 'not an archive\n' > "$TEST_TMP/local-archive.tar"
+expect_failure 'archive is not a source directory' command_import analyze "$TEST_TMP/local-archive.tar"
+python3 - "$TEST_TMP/local-report.json" <<'PY'
+import json, sys
+report = json.load(open(sys.argv[1]))
+assert report['source_kind'] == 'local' and report['source_url'] is None
+assert report['license_status'] == 'restrictive_terms_found'
+assert len(report['revision']) == 40
+assert report['semantic_roles']['BACKGROUND']['value'] == '#102030'
+PY
+mkdir "$TEST_TMP/plain local source"
+printf 'background #102030\nforeground #E0E0E0\n' > "$TEST_TMP/plain local source/kitty.conf"
+command_import analyze "$TEST_TMP/plain local source" > "$TEST_TMP/plain-local-report.json"
+python3 - "$TEST_TMP/plain-local-report.json" <<'PY'
+import json, sys
+assert json.load(open(sys.argv[1]))['revision'] == 'unversioned'
+PY
+command_import preview "$local_repo" > "$TEST_TMP/local-preview.txt"
+[[ "$(cat "$TEST_TMP/local-preview.txt")" == *'Installation conflict: none detected'* ]]
+[[ "$(cat "$TEST_TMP/local-preview.txt")" == *'License status: restrictive_terms_found'* ]]
+[[ ! -e "$THEMES_DIR/local-local-source" ]]
+command_import convert "$local_repo" "$TEST_TMP/local converted" > "$TEST_TMP/local-convert.txt"
+theme_manifest_load "$TEST_TMP/local converted/theme.conf" ""
+theme_definition_load "$TEST_TMP/local converted/palette.conf" ""
+python3 "$ROOT/engine/importer/convert.py" validate-metadata \
+    "$TEST_TMP/local converted/source.json" local-local-source
+command_import convert "$local_repo" "$TEST_TMP/local converted again" > /dev/null
+cmp "$TEST_TMP/local converted/source.json" "$TEST_TMP/local converted again/source.json"
+cmp "$TEST_TMP/local converted/palette.conf" "$TEST_TMP/local converted again/palette.conf"
+expect_failure 'local conversion output collision' command_import convert "$local_repo" "$TEST_TMP/local converted"
+command_import install "$TEST_TMP/local converted"
+[[ -f "$THEMES_DIR/local-local-source/source.json" ]]
+cmp "$TEST_TMP/local converted/source.json" "$THEMES_DIR/local-local-source/source.json"
+command_import preview "$local_repo" > "$TEST_TMP/local-preview-conflict.txt"
+[[ "$(cat "$TEST_TMP/local-preview-conflict.txt")" == *'Installation conflict: yes; theme ID already exists'* ]]
+expect_failure 'local import installation collision' command_import install "$TEST_TMP/local converted again"
+printf 'user data\n' > "$THEMES_DIR/local-local-source/user-file"
+[[ "$(cat "$THEMES_DIR/local-local-source/user-file")" == 'user data' ]]
+cp -- "$TEST_TMP/local converted/source.json" "$TEST_TMP/source-valid.json"
+printf 'invalid\n' > "$TEST_TMP/local converted/source.json"
+expect_failure 'tampered import metadata rejected' command_import install "$TEST_TMP/local converted"
+[[ "$(cat "$THEMES_DIR/local-local-source/user-file")" == 'user data' ]]
+THEME_ROOT="$TEST_TMP/metadata-failure-root"
+THEMES_DIR="$THEME_ROOT/themes"
+mkdir -p "$THEME_ROOT"
+cp() {
+    if [[ "$*" == *source.json* ]]; then return 91; fi
+    command cp "$@"
+}
+expect_failure 'metadata copy failure rolls back theme directory' \
+    command_import install "$TEST_TMP/local converted again"
+unset -f cp
+[[ ! -e "$THEMES_DIR/local-local-source" ]]
+rm -- "$TEST_TMP/local converted/source.json"
+ln -s "$TEST_TMP/source-valid.json" "$TEST_TMP/local converted/source.json"
+expect_failure 'symlinked import metadata rejected' command_import install "$TEST_TMP/local converted"
+[[ ! -e "$THEMES_DIR/local-local-source" ]]
+[[ -z "$(find "$TMPDIR" -mindepth 1 -print -quit)" ]]
+
 echo 'All isolated tests passed.'
