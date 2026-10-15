@@ -272,7 +272,9 @@ HIGHLIGHT="$final_highlight"
 
 EOF
 
-    if ! color_data_read "$runtime_tmp" runtime || ! mv -f -- "$runtime_tmp" "$RUNTIME_COLORS"; then
+    if ! color_data_read "$runtime_tmp" runtime ||
+       [[ -L "$RUNTIME_COLORS" || ( -e "$RUNTIME_COLORS" && ! -f "$RUNTIME_COLORS" ) ]] ||
+       ! mv -fT -- "$runtime_tmp" "$RUNTIME_COLORS"; then
         rm -f -- "$runtime_tmp"
         log_error "Unable to install validated runtime palette."
         return 1

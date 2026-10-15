@@ -56,6 +56,7 @@ theme_apply() {
     color_generate || return 1
     local module_dir module enabled_var phase fn target backup_dir="" index=0
     local original_generated="$GENERATED_DIR" render_stage="" generated_file
+    local THEME_APPLY_PREVIOUS_GENERATED_DIR="$GENERATED_DIR"
     local -a enabled_modules=() targets=() generated_files=() reloaded_modules=()
 
     for module_dir in "$MODULES_DIR"/*; do

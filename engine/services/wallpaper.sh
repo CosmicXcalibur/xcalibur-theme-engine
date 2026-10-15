@@ -16,10 +16,11 @@ wallpaper_save_state() {
     local wallpaper="$1"
     local state_file
     fs_directory_safe "$STATE_DIR" true || return 1
-    [[ ! -L "$STATE_DIR/current_wallpaper" ]] || return 1
+    [[ ! -L "$STATE_DIR/current_wallpaper" &&
+       ( ! -e "$STATE_DIR/current_wallpaper" || -f "$STATE_DIR/current_wallpaper" ) ]] || return 1
     state_file="$(mktemp "$STATE_DIR/.current_wallpaper.XXXXXX")" || return 1
     if ! printf '%s\n' "$wallpaper" > "$state_file" ||
-       ! mv -f -- "$state_file" "$STATE_DIR/current_wallpaper"; then
+       ! mv -fT -- "$state_file" "$STATE_DIR/current_wallpaper"; then
         rm -f -- "$state_file"
         return 1
     fi
@@ -114,7 +115,9 @@ wallpaper_set() {
         return 1
     fi
 
-    if ! fs_directory_safe "$STATE_DIR" true || [[ -L "$STATE_DIR/current_wallpaper" ]]; then
+    if ! fs_directory_safe "$STATE_DIR" true ||
+       [[ -L "$STATE_DIR/current_wallpaper" ||
+          ( -e "$STATE_DIR/current_wallpaper" && ! -f "$STATE_DIR/current_wallpaper" ) ]]; then
         log_error "Unsafe wallpaper state destination."
         return 1
     fi

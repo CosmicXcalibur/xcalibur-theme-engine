@@ -41,8 +41,18 @@ fs_install_atomic() {
     if ! install -m "$mode" -- "$source_file" "$tmp" ||
        ! fs_directory_safe "$target_dir" false ||
        [[ -L "$target" || ( -e "$target" && ! -f "$target" ) ]] ||
-       ! mv -f -- "$tmp" "$target"; then
+       ! mv -fT -- "$tmp" "$target"; then
         rm -f -- "$tmp"
         return 1
     fi
+}
+
+# During a theme transaction, avoid treating an unchanged engine output as an
+# original user configuration on a later application.
+fs_matches_previous_generated() {
+    local target="$1" filename="$2" previous_dir="${THEME_APPLY_PREVIOUS_GENERATED_DIR:-}"
+    [[ -n "$previous_dir" && -f "$previous_dir/$filename" &&
+       ! -L "$previous_dir/$filename" ]] &&
+        fs_directory_safe "$previous_dir" false &&
+        cmp -s -- "$target" "$previous_dir/$filename"
 }

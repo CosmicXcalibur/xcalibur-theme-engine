@@ -14,7 +14,9 @@ hyprlock_install() {
 
     if [[ -f "$target" && ! -f "$backup" ]]; then
         [[ ! -e "$backup" ]] || return 1
-        fs_install_atomic "$target" "$backup" || return 1
+        if ! fs_matches_previous_generated "$target" hyprlock.conf; then
+            fs_install_atomic "$target" "$backup" || return 1
+        fi
     fi
 
     fs_install_atomic \

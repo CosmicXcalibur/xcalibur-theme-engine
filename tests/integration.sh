@@ -136,4 +136,19 @@ cmp -s "$CASE_DIR/checkout/runtime/generated/colors.sh" "$CASE_DIR/palette-befor
 [[ -z "$(find "$CASE_DIR/checkout/runtime/generated" -maxdepth 1 -name '.render-stage.*' -print -quit)" ]]
 [[ ! -e "$HOME/.config/hypr/hyprlock.conf.xcalibur-backup" ]]
 [[ ! -e "$HOME/.config/swaync/style.css.xcalibur-backup" ]]
+RELOAD_FAIL=0
+export RELOAD_FAIL
+"$cli" set xcalibur-test > "$CASE_DIR/recovery.log"
+grep -q '^color4 #ff0000$' "$HOME/.config/kitty/current-theme.conf"
+grep -q '^PRIMARY="#ff0000"$' "$CASE_DIR/checkout/runtime/generated/colors.sh"
+[[ "$(< "$CASE_DIR/checkout/runtime/state/current_theme")" == xcalibur-test ]]
+sha256sum -- "${targets[@]}" > "$CASE_DIR/recovered-application-checksums"
+"$cli" set xcalibur-test > "$CASE_DIR/repeat.log"
+sha256sum -c "$CASE_DIR/recovered-application-checksums" > /dev/null
+[[ ! -e "$HOME/.config/hypr/hyprlock.conf.xcalibur-backup" ]]
+[[ ! -e "$HOME/.config/swaync/style.css.xcalibur-backup" ]]
+printf 'user notification edit\n' > "$HOME/.config/swaync/style.css"
+"$cli" set xcalibur-test > "$CASE_DIR/user-edit-recovery.log"
+[[ "$(< "$HOME/.config/swaync/style.css.xcalibur-backup")" == 'user notification edit' ]]
+[[ ! -e "$HOME/.config/hypr/hyprlock.conf.xcalibur-backup" ]]
 printf 'End-to-end isolated CLI workflow passed.\n'

@@ -75,7 +75,8 @@ theme_set() {
         return 1
     fi
 
-    if ! fs_directory_safe "$STATE_DIR" true || [[ -L "$CURRENT_THEME_FILE" ]]; then
+    if ! fs_directory_safe "$STATE_DIR" true ||
+       [[ -L "$CURRENT_THEME_FILE" || ( -e "$CURRENT_THEME_FILE" && ! -f "$CURRENT_THEME_FILE" ) ]]; then
         log_error "Unable to create state directory: $STATE_DIR"
         return 1
     fi
@@ -122,7 +123,8 @@ theme_write_current_state() {
     local theme_id="$1"
     local state_file
 
-    if ! fs_directory_safe "$STATE_DIR" true || [[ -L "$CURRENT_THEME_FILE" ]] ||
+    if ! fs_directory_safe "$STATE_DIR" true ||
+       [[ -L "$CURRENT_THEME_FILE" || ( -e "$CURRENT_THEME_FILE" && ! -f "$CURRENT_THEME_FILE" ) ]] ||
        ! state_file="$(mktemp "$STATE_DIR/.current_theme.XXXXXX")"; then
         return 1
     fi
@@ -132,7 +134,7 @@ theme_write_current_state() {
         return 1
     fi
 
-    if ! mv -f -- "$state_file" "$CURRENT_THEME_FILE"; then
+    if ! mv -fT -- "$state_file" "$CURRENT_THEME_FILE"; then
         rm -f -- "$state_file"
         return 1
     fi

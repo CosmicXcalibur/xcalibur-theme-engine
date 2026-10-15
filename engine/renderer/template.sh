@@ -24,6 +24,7 @@ render_template() {
         fi
     fi
     fs_directory_safe "$(dirname "$output")" true || return 1
+    [[ ! -L "$output" && ( ! -e "$output" || -f "$output" ) ]] || return 1
     tmp="$(mktemp "$(dirname "$output")/.render.XXXXXX")" || return 1
 
     while IFS= read -r line || [[ -n "$line" ]]; do
@@ -50,7 +51,8 @@ render_template() {
         }
     done < "$template"
 
-    if ! mv -f -- "$tmp" "$output"; then
+    if [[ -L "$output" || ( -e "$output" && ! -f "$output" ) ]] ||
+       ! mv -fT -- "$tmp" "$output"; then
         rm -f -- "$tmp"
         return 1
     fi

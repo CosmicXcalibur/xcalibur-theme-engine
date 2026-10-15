@@ -89,7 +89,27 @@ rm -rf -- "$THEMES_DIR/broken"
 wallpaper="$TEST_TMP/wallpaper with spaces.png"
 touch "$wallpaper"
 printf '%s\n' "$wallpaper" > "$STATE_DIR/current_wallpaper"
+saved_state_dir="$STATE_DIR"
+saved_current_theme_file="$CURRENT_THEME_FILE"
+STATE_DIR="$TEST_TMP/state-directory-targets"
+CURRENT_THEME_FILE="$STATE_DIR/current_theme"
+mkdir -p "$STATE_DIR/current_wallpaper" "$CURRENT_THEME_FILE"
+expect_failure 'wallpaper state destination is a directory' wallpaper_save_state "$wallpaper"
+expect_failure 'theme state destination is a directory' theme_write_current_state xcalibur-test
+[[ -z "$(find "$STATE_DIR" -type f -print -quit)" ]]
+STATE_DIR="$saved_state_dir"
+CURRENT_THEME_FILE="$saved_current_theme_file"
 color_export
+saved_runtime_colors="$RUNTIME_COLORS"
+mkdir "$TEST_TMP/palette-directory"
+RUNTIME_COLORS="$TEST_TMP/palette-directory"
+expect_failure 'palette destination is a directory' color_export
+[[ -z "$(find "$RUNTIME_COLORS" -mindepth 1 -print -quit)" ]]
+ln -s "$saved_runtime_colors" "$TEST_TMP/palette-link"
+RUNTIME_COLORS="$TEST_TMP/palette-link"
+expect_failure 'palette destination is a symlink' color_export
+[[ -L "$RUNTIME_COLORS" ]]
+RUNTIME_COLORS="$saved_runtime_colors"
 printf 'old\n' > "$TEST_TMP/live.conf"
 printf 'new\n' > "$TEST_TMP/generated.conf"
 fs_install_atomic "$TEST_TMP/generated.conf" "$TEST_TMP/live.conf"
@@ -220,6 +240,12 @@ done
 printf 'before {{BACKGROUND}} after {{COLOR4}}\n' > "$TEST_TMP/template"
 render_template "$TEST_TMP/template" "$TEST_TMP/output"
 [[ "$(cat "$TEST_TMP/output")" == 'before #010203 after #000004' ]]
+mkdir "$TEST_TMP/render-directory"
+expect_failure 'renderer destination is a directory' render_template "$TEST_TMP/template" "$TEST_TMP/render-directory"
+[[ -z "$(find "$TEST_TMP/render-directory" -mindepth 1 -print -quit)" ]]
+ln -s "$TEST_TMP/output" "$TEST_TMP/render-link"
+expect_failure 'renderer destination is a symlink' render_template "$TEST_TMP/template" "$TEST_TMP/render-link"
+[[ -L "$TEST_TMP/render-link" ]]
 printf '{{BACKGROUND}}/{{COLOR4}}/{{FOREGROUND}}/{{BACKGROUND}}\n' > "$TEST_TMP/template"
 render_template "$TEST_TMP/template" "$TEST_TMP/output"
 [[ "$(cat "$TEST_TMP/output")" == '#010203/#000004/#eeeeee/#010203' ]]
