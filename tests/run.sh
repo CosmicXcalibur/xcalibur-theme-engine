@@ -574,6 +574,70 @@ command_import install "$TEST_TMP/converted pack"
 expect_failure 'import install collision' command_import install "$TEST_TMP/converted pack"
 [[ -z "$(find "$TMPDIR" -mindepth 1 -print -quit)" ]]
 
+# A Catppuccin-style repository contains independent complete Kitty palettes.
+mkdir -p "$TEST_TMP/multi-variant-fixture/themes"
+for variant in frappe latte macchiato mocha; do
+    case "$variant" in
+        frappe) background='#303446'; foreground='#C6D0F5' ;;
+        latte) background='#EFF1F5'; foreground='#4C4F69' ;;
+        macchiato) background='#24273A'; foreground='#CAD3F5' ;;
+        mocha) background='#1E1E2E'; foreground='#CDD6F4' ;;
+    esac
+    printf 'background %s\nforeground %s\ncursor #F5E0DC\nselection_background #45475A\ncolor0 #11111B\n' \
+        "$background" "$foreground" > "$TEST_TMP/multi-variant-fixture/themes/$variant.conf"
+done
+printf 'MIT License; verify upstream terms.\n' > "$TEST_TMP/multi-variant-fixture/LICENSE"
+ln -s mocha.conf "$TEST_TMP/multi-variant-fixture/themes/linked.conf"
+IMPORT_FIXTURE="$TEST_TMP/multi-variant-fixture"
+export IMPORT_FIXTURE
+command_import analyze "owner/repo@$pin" > "$TEST_TMP/multi-report.json"
+python3 - "$TEST_TMP/multi-report.json" <<'PY'
+import json, sys
+report = json.load(open(sys.argv[1]))
+assert len(report['theme_candidates']) == 4
+assert report['semantic_roles'] == {} and report['selected_candidate'] is None
+assert report['revision'] == '0' * 40
+PY
+command_import preview "owner/repo@$pin" > "$TEST_TMP/multi-preview.txt"
+[[ "$(cat "$TEST_TMP/multi-preview.txt")" == *'Theme candidates: 4'* ]]
+[[ "$(cat "$TEST_TMP/multi-preview.txt")" == *'"themes/mocha.conf" ("mocha", kitty;'* ]]
+[[ "$(cat "$TEST_TMP/multi-preview.txt")" == *'Selection required: repeat preview or convert with --theme'* ]]
+expect_failure 'multiple themes require a selector' \
+    command_import convert "owner/repo@$pin" "$TEST_TMP/unselected-multi-pack"
+[[ ! -e "$TEST_TMP/unselected-multi-pack" ]]
+retrieve_count="$(wc -l < "$IMPORT_RETRIEVE_LOG")"
+expect_failure 'absolute theme selector rejected before retrieval' \
+    command_import preview "owner/repo@$pin" --theme /etc/passwd
+expect_failure 'traversal theme selector rejected before retrieval' \
+    command_import preview "owner/repo@$pin" --theme ../mocha.conf
+[[ "$(wc -l < "$IMPORT_RETRIEVE_LOG")" == "$retrieve_count" ]]
+expect_failure 'symlink theme selector rejected' \
+    command_import preview "owner/repo@$pin" --theme themes/linked.conf
+expect_failure 'missing theme selector rejected' \
+    command_import preview "owner/repo@$pin" --theme themes/missing.conf
+command_import analyze "owner/repo@$pin" --theme themes/mocha.conf > "$TEST_TMP/mocha-report.json"
+python3 - "$TEST_TMP/mocha-report.json" <<'PY'
+import json, sys
+report = json.load(open(sys.argv[1]))
+assert report['selected_candidate']['path'] == 'themes/mocha.conf'
+assert report['semantic_roles']['BACKGROUND']['value'] == '#1E1E2E'
+assert report['revision'] == '0' * 40
+PY
+command_import preview "owner/repo@$pin" --theme themes/mocha.conf > "$TEST_TMP/mocha-preview.txt"
+[[ "$(cat "$TEST_TMP/mocha-preview.txt")" == *'Selected candidate: "themes/mocha.conf"'* ]]
+command_import convert "owner/repo@$pin" "$TEST_TMP/mocha converted" \
+    --theme themes/mocha.conf > "$TEST_TMP/mocha-convert.txt"
+[[ "$(cat "$TEST_TMP/mocha converted/palette.conf")" == *'BACKGROUND=#1E1E2E'* ]]
+python3 - "$TEST_TMP/mocha converted/source.json" <<'PY'
+import json, sys
+metadata = json.load(open(sys.argv[1]))
+assert metadata['selected_candidate']['path'] == 'themes/mocha.conf'
+assert metadata['revision'] == '0' * 40
+assert metadata['license_status'] == 'present_unverified'
+assert all(item['path'] == 'themes/mocha.conf' for item in metadata['role_sources'].values())
+PY
+[[ -z "$(find "$TMPDIR" -mindepth 1 -print -quit)" ]]
+
 # Exercise every public import stage against a committed local repository.
 PATH="${PATH#"$TEST_TMP/mock-bin:"}"
 export PATH

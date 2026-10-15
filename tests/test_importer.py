@@ -40,6 +40,8 @@ class ImporterTests(unittest.TestCase):
 
     def test_analyze_preview_convert(self):
         report = self.report()
+        self.assertEqual(len(report["theme_candidates"]), 1)
+        self.assertIsNone(report["selected_candidate"])
         self.assertEqual(report["semantic_roles"]["BACKGROUND"]["value"], "#112233")
         self.assertIn("Planned files: theme.conf, palette.conf", converter.preview(report))
         output = self.root / "new pack"
@@ -54,6 +56,94 @@ class ImporterTests(unittest.TestCase):
         self.assertEqual(metadata["role_sources"]["ACCENT"]["path"], "colors.css")
         with self.assertRaises(ValueError):
             converter.convert(report, output)
+
+    def test_multiple_kitty_variants_require_exact_selection(self):
+        source = self.root / "variants"
+        themes = source / "themes"
+        themes.mkdir(parents=True)
+        variants = {
+            "frappe": ("#303446", "#C6D0F5"),
+            "latte": ("#EFF1F5", "#4C4F69"),
+            "macchiato": ("#24273A", "#CAD3F5"),
+            "mocha": ("#1E1E2E", "#CDD6F4"),
+        }
+        for name, (background, foreground) in variants.items():
+            (themes / f"{name}.conf").write_text(
+                f"background {background}\nforeground {foreground}\n"
+                "cursor #F5E0DC\nselection_background #45475A\ncolor0 #11111B\n")
+        (source / "LICENSE").write_text("MIT License. Review upstream terms.\n")
+        report = analyzer.analyze(source, "catppuccin/kitty", "a" * 40)
+        self.assertEqual([item["path"] for item in report["theme_candidates"]],
+                         [f"themes/{name}.conf" for name in sorted(variants)])
+        self.assertEqual(report["semantic_roles"], {})
+        self.assertEqual(report["raw_ansi"], [])
+        preview = converter.preview(report)
+        self.assertIn("Theme candidates: 4", preview)
+        self.assertIn('"themes/mocha.conf" ("mocha", kitty;', preview)
+        self.assertIn("Selection required:", preview)
+        self.assertIn("Conversion ready: no; select one candidate", preview)
+        with self.assertRaisesRegex(ValueError, "multiple theme candidates"):
+            converter.convert(report, self.root / "unselected-pack")
+        self.assertFalse((self.root / "unselected-pack").exists())
+
+        selected = analyzer.analyze(source, "catppuccin/kitty", "a" * 40,
+                                    selector="themes/mocha.conf")
+        self.assertEqual(selected["selected_candidate"]["path"], "themes/mocha.conf")
+        self.assertEqual(selected["semantic_roles"]["BACKGROUND"]["value"], "#1E1E2E")
+        self.assertEqual(selected["semantic_roles"]["FOREGROUND"]["value"], "#CDD6F4")
+        self.assertTrue(all(item["path"] == "themes/mocha.conf" for item in selected["raw_ansi"]))
+        self.assertEqual(selected["conflicts"], [])
+        self.assertIn('Selected candidate: "themes/mocha.conf"', converter.preview(selected))
+        output = self.root / "mocha-pack"
+        theme_id = converter.convert(selected, output)
+        self.assertTrue(theme_id.startswith("catppuccin-kitty-themes-mocha-"))
+        self.assertIn("BACKGROUND=#1E1E2E", (output / "palette.conf").read_text())
+        self.assertNotIn("#303446", (output / "palette.conf").read_text())
+        metadata = json.loads((output / "source.json").read_text())
+        self.assertEqual(metadata["selected_candidate"],
+                         {"path": "themes/mocha.conf", "name": "mocha", "format": "kitty",
+                          "background": "#1E1E2E", "foreground": "#CDD6F4"})
+        self.assertEqual(metadata["detected_formats"], ["kitty"])
+        self.assertEqual(metadata["license_status"], "present_unverified")
+        self.assertTrue(all(item["path"] == "themes/mocha.conf"
+                            for item in metadata["role_sources"].values()))
+        self.assertEqual(metadata, converter.source_metadata(metadata, theme_id))
+        tampered = json.loads(json.dumps(metadata))
+        tampered["selected_candidate"]["path"] = "themes/latte.conf"
+        with self.assertRaisesRegex(ValueError, "selected theme candidate"):
+            converter.source_metadata(tampered, theme_id)
+        tampered = json.loads(json.dumps(metadata))
+        tampered["role_sources"]["BACKGROUND"]["path"] = "themes/latte.conf"
+        with self.assertRaisesRegex(ValueError, "another source"):
+            converter.source_metadata(tampered, theme_id)
+
+    def test_candidate_selector_validation_and_duplicate_names(self):
+        source = self.root / "variants"
+        for folder in ("light", "dark"):
+            target = source / folder
+            target.mkdir(parents=True)
+            (target / "mocha.conf").write_text(
+                "background #112233\nforeground #EEEEEE\ncursor #445566\n")
+        (source / "linked.conf").symlink_to(source / "dark/mocha.conf")
+        (source / "linked-dir").symlink_to(source / "dark", target_is_directory=True)
+        (source / "unsupported.txt").write_text(
+            "background #112233\nforeground #EEEEEE\ncursor #445566\n")
+        (source / "broken.conf").write_text(
+            "background #112233\nbackground #445566\nforeground #EEEEEE\ncursor #445566\n")
+        (source / "bad\x1b.conf").write_text(
+            "background #112233\nforeground #EEEEEE\ncursor #445566\n")
+        report = analyzer.analyze(source, "owner/repo", "a" * 40)
+        self.assertEqual(len(report["theme_candidates"]), 2)
+        self.assertTrue(any(item["reason"] == "unsafe_candidate_path" for item in report["skipped"]))
+        for selector in ("/etc/passwd", "../dark/mocha.conf", "dark/../light/mocha.conf",
+                         "dark//mocha.conf", "dark\\mocha.conf", "dark/mocha.conf\n",
+                         "missing.conf", "linked.conf", "linked-dir/mocha.conf",
+                         "unsupported.txt", "broken.conf"):
+            with self.subTest(selector=selector), self.assertRaises(ValueError):
+                analyzer.analyze(source, "owner/repo", "a" * 40, selector=selector)
+        light = analyzer.analyze(source, "owner/repo", "a" * 40, selector="light/mocha.conf")
+        dark = analyzer.analyze(source, "owner/repo", "a" * 40, selector="dark/mocha.conf")
+        self.assertNotEqual(converter.plan(light)[0], converter.plan(dark)[0])
 
     def test_ambiguous_required_role(self):
         report = self.report()

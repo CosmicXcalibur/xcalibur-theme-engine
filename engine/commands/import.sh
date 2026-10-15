@@ -3,15 +3,45 @@
 command_import() (
     local mode="${1:-}" repository="${2:-}" output="${3:-}" staging="" revision report_file
     local source_kind=github source_dir="" retrieval_info="" source_ref="" pinned_revision="" slug
+    local selector="" component
+    local -a selector_parts=()
     if [[ "$mode" == install ]]; then
         [[ "$#" -eq 2 ]] || { log_error "Usage: theme import install <pack-directory>"; return 2; }
         theme_install_from_directory "$repository"
         return
     fi
     if [[ "$mode" != analyze && "$mode" != preview && "$mode" != convert ]] ||
-       { [[ "$mode" == convert && "$#" -ne 3 ]] || [[ "$mode" != convert && "$#" -ne 2 ]]; }; then
-        log_error "Usage: theme import analyze|preview <owner/repo|github-url|local-path> | convert <source> <new-output-directory> | install <pack-directory>"
+       { [[ "$mode" == convert && "$#" -ne 3 && "$#" -ne 5 ]] ||
+         [[ "$mode" != convert && "$#" -ne 2 && "$#" -ne 4 ]]; } ||
+       { [[ "$mode" == convert && "$#" -eq 5 && "${4:-}" != --theme ]] ||
+         [[ "$mode" != convert && "$#" -eq 4 && "${3:-}" != --theme ]]; }; then
+        log_error "Usage: theme import analyze|preview <source> [--theme <relative-file>] | convert <source> <new-output-directory> [--theme <relative-file>] | install <pack-directory>"
         return 2
+    fi
+    if [[ "$mode" == convert && "$#" -eq 5 ]]; then
+        selector="$5"
+    elif [[ "$mode" != convert && "$#" -eq 4 ]]; then
+        selector="$4"
+    fi
+    if [[ "$#" -gt 3 || -n "$selector" ]]; then
+        if [[ -z "$selector" || "$selector" == /* || "$selector" == *\\* ||
+              "$selector" =~ [[:cntrl:]] || ${#selector} -gt 1024 ||
+              ( "${selector,,}" != *.conf && "${selector,,}" != *.css &&
+                "${selector,,}" != *.theme ) ]]; then
+            log_error "Invalid theme selector; use an exact relative .conf, .css, or .theme file path."
+            return 2
+        fi
+        IFS='/' read -r -a selector_parts <<< "$selector"
+        if [[ ${#selector_parts[@]} -gt 9 || "$selector" == *//* ]]; then
+            log_error "Invalid theme selector path."
+            return 2
+        fi
+        for component in "${selector_parts[@]}"; do
+            if [[ -z "$component" || "$component" == . || "$component" == .. ]]; then
+                log_error "Invalid theme selector path."
+                return 2
+            fi
+        done
     fi
     if [[ "$repository" == /* || "$repository" == ./* || "$repository" == ../* ]]; then
         source_kind=local
@@ -101,13 +131,13 @@ command_import() (
     fi
     report_file="$staging/report.json"
     if [[ "$mode" == analyze ]]; then
-        python3 "$ENGINE_DIR/importer/analyze.py" "$source_dir" "$repository" "$revision" "$source_kind" "${retrieval_info:--}" || {
+        python3 "$ENGINE_DIR/importer/analyze.py" "$source_dir" "$repository" "$revision" "$source_kind" "${retrieval_info:--}" "${selector:--}" || {
             log_error "Unable to analyze source: $2"
             return 1
         }
         return 0
     fi
-    if ! python3 "$ENGINE_DIR/importer/analyze.py" "$source_dir" "$repository" "$revision" "$source_kind" "${retrieval_info:--}" > "$report_file"; then
+    if ! python3 "$ENGINE_DIR/importer/analyze.py" "$source_dir" "$repository" "$revision" "$source_kind" "${retrieval_info:--}" "${selector:--}" > "$report_file"; then
         log_error "Unable to analyze source: $2"
         return 1
     fi

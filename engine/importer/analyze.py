@@ -37,6 +37,16 @@ ROLES = {
     "selection": "SELECTION", "selection_background": "SELECTION",
     "highlight": "HIGHLIGHT",
 }
+def validate_selector(selector):
+    """A selector is one exact, repository-relative source file path."""
+    if not isinstance(selector, str) or not selector or len(selector) > 1024 or \
+            selector.startswith("/") or "\\" in selector or any(
+                part in ("", ".", "..") for part in selector.split("/")) or any(
+                ord(char) < 32 or ord(char) == 127 for char in selector) or \
+            len(selector.split("/")) > MAX_DEPTH + 1 or \
+            not selector.lower().endswith((".conf", ".css", ".theme")):
+        raise ValueError("invalid theme selector; use an exact relative .conf, .css, or .theme file path")
+    return selector
 
 
 def normalize_color(value):
@@ -190,8 +200,10 @@ def bounded_walk(root, report, started):
 
 
 def analyze(root, repository, revision, source_kind="github", source_url=None,
-            retrieval_info=None):
+            retrieval_info=None, selector=None):
     started = time.monotonic()
+    if selector is not None:
+        validate_selector(selector)
     if not root.is_absolute() or not root.is_dir() or any(
             parent.is_symlink() for parent in (root, *root.parents)):
         raise ValueError("unsafe or missing source directory")
@@ -211,13 +223,16 @@ def analyze(root, repository, revision, source_kind="github", source_url=None,
         "limits": {"files": MAX_FILES, "directories": MAX_DIRECTORIES,
                    "depth": MAX_DEPTH, "file_bytes": MAX_FILE_SIZE,
                    "total_bytes": MAX_TOTAL_BYTES, "seconds": MAX_SECONDS},
-        "inventory": [], "semantic_roles": {}, "conflicts": [], "skipped": [],
+        "inventory": [], "theme_candidates": [], "selected_candidate": None,
+        "semantic_roles": {}, "conflicts": [], "skipped": [],
         "raw_ansi": [],
         "unsupported_constructs": [],
         "license_files": [], "licenses": [], "application_configs_converted": 0,
         "theme_pack_generated": False, "installed": False, "applied": False,
     }
-    candidates = {}
+    role_candidates = {}
+    file_role_candidates = {}
+    file_raw_ansi = {}
     files = 0
     total_bytes = 0
     for current, names in bounded_walk(root, report, started):
@@ -281,19 +296,53 @@ def analyze(root, repository, revision, source_kind="github", source_url=None,
             if not kind or not colors:
                 continue
             roles = {}
+            local_sources = {}
+            local_raw = []
             for key, color in occurrences:
                 if re.fullmatch(r"color(?:[0-9]|1[0-5])", key):
-                    report["raw_ansi"].append({"path": relative, "key": key, "value": color})
+                    entry = {"path": relative, "key": key, "value": color}
+                    report["raw_ansi"].append(entry)
+                    local_raw.append(entry)
                 role = ROLES.get(key)
                 if role:
-                    roles[role] = color
-                    candidates.setdefault(role, []).append({"value": color, "path": relative, "key": key})
+                    source = {"value": color, "path": relative, "key": key}
+                    local_sources.setdefault(role, []).append(source)
+                    role_candidates.setdefault(role, []).append(source)
+            for role, sources in local_sources.items():
+                if len({source["value"] for source in sources}) == 1:
+                    roles[role] = sources[0]["value"]
+            file_role_candidates[relative] = local_sources
+            file_raw_ansi[relative] = local_raw
             report["inventory"].append({
                 "path": relative, "format": kind, "application": application(relative),
                 "colors": colors, "semantic_roles": roles,
                 "confidence": "high" if roles else "raw_colors_only",
             })
-    for role, sources in sorted(candidates.items()):
+            if {"BACKGROUND", "FOREGROUND"} <= roles.keys():
+                try:
+                    validate_selector(relative)
+                except ValueError:
+                    report["skipped"].append({"path": relative, "reason": "unsafe_candidate_path"})
+                else:
+                    report["theme_candidates"].append({
+                        "path": relative, "name": Path(relative).stem,
+                        "format": kind, "background": roles["BACKGROUND"],
+                        "foreground": roles["FOREGROUND"],
+                    })
+    if selector is not None:
+        matches = [item for item in report["theme_candidates"] if item["path"] == selector]
+        if len(matches) != 1:
+            raise ValueError(f"selector is not a valid theme candidate: {selector}; use a listed exact file path")
+        report["selected_candidate"] = matches[0]
+        role_candidates = file_role_candidates[selector]
+        report["raw_ansi"] = file_raw_ansi[selector]
+        report["unsupported_constructs"] = [item for item in report["unsupported_constructs"]
+                                             if item["path"] == selector]
+    elif len(report["theme_candidates"]) > 1:
+        # Independent complete palettes require a choice; do not merge them.
+        role_candidates = {}
+        report["raw_ansi"] = []
+    for role, sources in sorted(role_candidates.items()):
         values = {source["value"] for source in sources}
         if len(values) == 1:
             report["semantic_roles"][role] = sources[0]
@@ -314,22 +363,24 @@ def analyze(root, repository, revision, source_kind="github", source_url=None,
 
 
 if __name__ == "__main__":
-    if len(sys.argv) not in (4, 5, 6):
-        sys.exit("usage: analyze.py <checkout> <repository> <revision> [github|local] [retrieval.json|-]")
+    if len(sys.argv) not in (4, 5, 6, 7):
+        sys.exit("usage: analyze.py <checkout> <repository> <revision> [github|local] [retrieval.json|-] [selector|-]")
     try:
         source_kind = sys.argv[4] if len(sys.argv) == 5 else "github"
-        if len(sys.argv) == 6:
+        if len(sys.argv) >= 6:
             source_kind = sys.argv[4]
         if source_kind not in ("github", "local"):
             raise ValueError("unsupported source kind")
         info = None
-        if len(sys.argv) == 6 and sys.argv[5] != "-":
+        if len(sys.argv) >= 6 and sys.argv[5] != "-":
             path = Path(sys.argv[5])
             if path.is_symlink() or path.stat().st_size > 65536:
                 raise ValueError("unsafe retrieval metadata")
             info = json.loads(path.read_text())
         print(json.dumps(analyze(Path(sys.argv[1]), sys.argv[2], sys.argv[3], source_kind,
-                                 retrieval_info=info), indent=2, sort_keys=True))
+                                 retrieval_info=info,
+                                 selector=sys.argv[6] if len(sys.argv) == 7 and sys.argv[6] != "-" else None),
+                         indent=2, sort_keys=True))
     except (ValueError, OSError) as exc:
         print(f"Import analysis failed: {exc}", file=sys.stderr)
         sys.exit(1)

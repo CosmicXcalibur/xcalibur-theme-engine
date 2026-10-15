@@ -20,10 +20,12 @@ Commands:
     wallpaper help|list|current|random|set <file>
     palette generate
     render <module>
-    import analyze|preview <owner/repo[@commit-sha]|github-url|local-path>
-    import convert <owner/repo[@commit-sha]|github-url|local-path> <new-output-directory>
+    import analyze|preview <source> [--theme <relative-file>]
+    import convert <source> <new-output-directory> [--theme <relative-file>]
     import install <pack-directory>
 
+Source: owner/repo[@commit-sha], HTTPS GitHub URL, or local path.
+For multiple theme files, preview lists candidates; select one by exact relative path.
 Preview prints the exact commit SHA to reuse for conversion. Import stages do not activate a theme.
 Use an absolute path or ./relative-path for a local source.
 EOF

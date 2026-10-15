@@ -32,6 +32,45 @@ def safe_relative(value):
         ord(char) < 32 or ord(char) == 127 for char in value)
 
 
+def selected_theme_id(repository, selected_path=None):
+    base = re.sub(r"[^a-z0-9]+", "-", repository.lower()).strip("-")
+    if selected_path is None:
+        return base
+    stem = str(Path(selected_path).with_suffix(""))
+    slug = re.sub(r"[^a-z0-9]+", "-", stem.lower()).strip("-")[:48].strip("-") or "theme"
+    digest = hashlib.sha256(selected_path.encode("utf-8")).hexdigest()[:8]
+    return f"{base}-{slug}-{digest}"
+
+
+def selected_candidate(report):
+    value = report.get("selected_candidate")
+    if value is None:
+        return None
+    if isinstance(value, str):
+        candidates = report.get("theme_candidates", [])
+        if not isinstance(candidates, list):
+            raise ValueError("invalid theme candidate inventory")
+        matches = [item for item in candidates if isinstance(item, dict) and item.get("path") == value]
+        if len(matches) != 1:
+            raise ValueError("selected theme candidate is missing or ambiguous")
+        value = matches[0]
+    if not isinstance(value, dict) or set(value) != {
+            "path", "name", "format", "background", "foreground"}:
+        raise ValueError("invalid selected theme candidate")
+    path, name, kind = value.get("path"), value.get("name"), value.get("format")
+    if not safe_relative(path) or "\\" in path or not path.lower().endswith((".conf", ".css", ".theme")) or \
+            len(path) > 1024 or len(path.split("/")) > 9 or \
+            not isinstance(name, str) or name != Path(path).stem or \
+            kind not in ("kitty", "css", "palette", "hyprlock"):
+        raise ValueError("invalid selected theme candidate")
+    if not isinstance(value["background"], str) or not isinstance(value["foreground"], str) or \
+            not COLOR.fullmatch(value["background"]) or not COLOR.fullmatch(value["foreground"]):
+        raise ValueError("invalid selected theme colors")
+    return {"path": path, "name": name, "format": kind,
+            "background": value["background"].upper(),
+            "foreground": value["foreground"].upper()}
+
+
 def source_metadata(report, theme_id):
     kind = report.get("source_kind", "github")
     repository = report["repository"]
@@ -44,6 +83,9 @@ def source_metadata(report, theme_id):
     url = report.get("source_url", f"https://github.com/{repository}" if kind == "github" else None)
     if (kind == "github" and url != f"https://github.com/{repository}") or (kind == "local" and url is not None):
         raise ValueError("invalid source URL in analysis report")
+    selected = selected_candidate(report)
+    if theme_id != selected_theme_id(repository, selected["path"] if selected else None):
+        raise ValueError("theme ID does not match selected source")
     retrieval = report.get("retrieval") if isinstance(report.get("retrieval"), dict) else report.get("retrieval_info")
     if retrieval is None:
         retrieval = {"method": "local_directory" if kind == "local" else "unspecified"}
@@ -115,7 +157,13 @@ def source_metadata(report, theme_id):
                 not isinstance(source.get("key"), str) or not re.fullmatch(r"[A-Za-z0-9_-]+", source["key"]) or \
                 not isinstance(source.get("value"), str) or not COLOR.fullmatch(source["value"]):
             raise ValueError("invalid role provenance")
+        if selected and source["path"] != selected["path"]:
+            raise ValueError("selected theme role came from another source file")
         clean_roles[role] = {key: source[key] for key in ("path", "key", "value")}
+    if selected:
+        if clean_roles.get("BACKGROUND", {}).get("value") != selected["background"] or \
+                clean_roles.get("FOREGROUND", {}).get("value") != selected["foreground"]:
+            raise ValueError("selected theme colors do not match role provenance")
     raw_ansi = report.get("raw_ansi")
     if raw_ansi is None:
         inventory = report.get("inventory", [])
@@ -136,13 +184,18 @@ def source_metadata(report, theme_id):
                 not isinstance(item.get("key"), str) or not RAW_ANSI.fullmatch(item["key"]) or \
                 not isinstance(item.get("value"), str) or not COLOR.fullmatch(item["value"]):
             raise ValueError("invalid raw ANSI palette provenance")
+        if selected and item["path"] != selected["path"]:
+            raise ValueError("selected raw ANSI color came from another source file")
         clean_raw.append({key: item[key] for key in ("path", "key", "value")})
     formats = report.get("detected_formats")
     if formats is None:
-        formats = sorted({item["format"] for item in report.get("inventory", [])})
+        formats = ([selected["format"]] if selected else
+                   sorted({item["format"] for item in report.get("inventory", [])}))
     if not isinstance(formats, list) or any(item not in ("kitty", "css", "palette", "hyprlock")
                                              for item in formats) or len(formats) > 4:
         raise ValueError("invalid detected source formats")
+    if selected and formats != [selected["format"]]:
+        raise ValueError("detected formats do not match selected theme")
     warnings = report.get("conversion_warnings")
     if warnings is None:
         warnings = []
@@ -157,9 +210,12 @@ def source_metadata(report, theme_id):
             not re.fullmatch(r"[A-Za-z0-9_]+", item["reason"])
             for item in warnings):
         raise ValueError("invalid conversion warnings")
+    if selected and any(item["path"] not in ("", selected["path"]) for item in warnings):
+        raise ValueError("selected theme warning came from another source file")
     clean_warnings = [{"path": item["path"], "reason": item["reason"]} for item in warnings]
     return {"schema": 1, "theme_id": theme_id, "source_kind": kind,
             "repository": repository, "source_url": url, "revision": revision,
+            "selected_candidate": selected,
             "retrieval": clean_retrieval,
             "revision_note": ("Local working tree may differ from HEAD" if kind == "local" else
                               "GitHub archive requested by exact commit SHA" if
@@ -180,7 +236,13 @@ def plan(report, require_complete=True):
     if not isinstance(report.get("semantic_roles"), dict) or not isinstance(report.get("conflicts"), list):
         raise ValueError("malformed roles or conflicts in analysis report")
     owner, repository = report["repository"].split("/")
-    theme_id = re.sub(r"[^a-z0-9]+", "-", f"{owner}-{repository}".lower()).strip("-")
+    selected = selected_candidate(report)
+    candidate_list = report.get("theme_candidates", [])
+    if not isinstance(candidate_list, list) or len(candidate_list) > 2000:
+        raise ValueError("invalid theme candidate inventory")
+    if require_complete and selected is None and len(candidate_list) > 1:
+        raise ValueError("multiple theme candidates found; select one with --theme <relative-file-path>")
+    theme_id = selected_theme_id(report["repository"], selected["path"] if selected else None)
     source_metadata(report, theme_id)
     roles = {}
     conflicts = {item["role"] for item in report.get("conflicts", [])}
@@ -385,21 +447,35 @@ def install_pack(source, destination, theme_id):
 def preview(report, themes_dir=None):
     theme_id, owner, repository, roles = plan(report, require_complete=False)
     metadata = source_metadata(report, theme_id)
+    candidates = report.get("theme_candidates", [])
+    selection_required = metadata["selected_candidate"] is None and len(candidates) > 1
     lines = [f"Source: {report['repository']} @ {report.get('revision', 'unknown')}",
              f"Source URL: {report.get('source_url') or '(local source; no public URL)'}",
              f"Retrieval: {metadata['retrieval']['method']}",
              f"Revision note: {metadata['revision_note']}",
-             f"Planned theme ID: {theme_id}", "Planned files: theme.conf, palette.conf, source.json",
+             f"Planned theme ID: {theme_id if not selection_required else '(select a candidate)'}",
+             "Planned files: theme.conf, palette.conf, source.json",
              "Detected files:"]
     if metadata["source_kind"] == "github" and re.fullmatch(r"[0-9a-f]{40}", metadata["revision"]):
         lines.insert(4, f"Pinned source for next command: {metadata['repository']}@{metadata['revision']}")
     if themes_dir is not None:
-        destination = Path(themes_dir) / theme_id
-        lines.append("Installation conflict: " + ("yes; theme ID already exists" if
-                     destination.exists() or destination.is_symlink() else "none detected"))
+        if selection_required:
+            lines.append("Installation conflict: select a candidate to check")
+        else:
+            destination = Path(themes_dir) / theme_id
+            lines.append("Installation conflict: " + ("yes; theme ID already exists" if
+                         destination.exists() or destination.is_symlink() else "none detected"))
     for item in report.get("inventory", []):
         lines.append(f"  {json.dumps(item['path'])} [{item['format']}, {item['confidence']}] "
                      f"{len(item['colors'])} colors")
+    lines.append(f"Theme candidates: {len(candidates)}")
+    for item in candidates:
+        lines.append(f"  {json.dumps(item['path'])} ({json.dumps(item['name'])}, {item['format']}; "
+                     f"BACKGROUND={item['background']}, FOREGROUND={item['foreground']})")
+    if metadata["selected_candidate"]:
+        lines.append(f"Selected candidate: {json.dumps(metadata['selected_candidate']['path'])}")
+    elif selection_required:
+        lines.append("Selection required: repeat preview or convert with --theme <relative-file-path>")
     lines.append("Detected roles:")
     for role in ROLES:
         if role in roles:
@@ -422,6 +498,7 @@ def preview(report, themes_dir=None):
     lines.append("License action: inspect upstream terms before use or redistribution")
     lines.append("Missing optional roles: " + (", ".join(role for role in ROLES if role not in roles) or "none"))
     lines.append("Conversion ready: " + (
+        "no; select one candidate with --theme" if selection_required else
         "yes" if {"BACKGROUND", "FOREGROUND"} <= roles.keys() else
         "no; unambiguous BACKGROUND and FOREGROUND are required"))
     lines.append("Application settings converted: none")
@@ -442,8 +519,13 @@ def convert(report, output):
     published = False
     try:
         stage_name, stage_fd = stage_directory(parent_fd)
+        variant = metadata["selected_candidate"]
+        display_name = f"{owner}/{repository}"
+        if variant:
+            display_name += " - " + (re.sub(r"[^A-Za-z0-9]+", " ", variant["name"]).strip()
+                                     or "theme")
         manifest = (
-            f"THEME_ID={theme_id}\nTHEME_NAME={owner}/{repository}\n"
+            f"THEME_ID={theme_id}\nTHEME_NAME={display_name}\n"
             "THEME_VERSION=1.0.0\n"
             "THEME_AUTHOR=Unverified upstream author\n"
             "THEME_DESCRIPTION=Converted color palette; review source authorship and license\n")

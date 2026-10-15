@@ -26,9 +26,9 @@ theme install <owner/repo>
 theme wallpaper help|list|current|random|set <file>
 theme palette generate
 theme render <module>
-theme import analyze <owner/repo|https://github.com/owner/repo|./local-directory>
-theme import preview <owner/repo|https://github.com/owner/repo|./local-directory>
-theme import convert <source> <new-output-directory>
+theme import analyze <source> [--theme <relative-file>]
+theme import preview <source> [--theme <relative-file>]
+theme import convert <source> <new-output-directory> [--theme <relative-file>]
 theme import install <pack-directory>
 ```
 
@@ -64,7 +64,7 @@ The Waybar file must be imported by your Waybar stylesheet; the Kitty file must 
 
 ## External theme import and conversion
 
-The importer accepts public `owner/repo` references, an optional exact SHA as `owner/repo@<40 lowercase hex characters>`, HTTPS GitHub repository URLs with an optional trailing `.git`, and local directories named with an absolute or `./relative` path. Local directories are read without a network request; a local Git HEAD is recorded when available, otherwise the revision is `unversioned`. Local sources must remain unchanged during each command. GitHub input rejects query strings, fragment revisions, other hosts, and malformed names. Remote retrieval resolves the default branch commit via GitHub's API, then downloads only that commit's archive through a validated HTTPS redirect. It limits the archive body to 16 MiB and declared checkout size to 32 MiB; see [importer limits](docs/importer.md) for the full table. Repository files are scanned as data only. Scripts, templates, Makefiles, hooks, and application commands from the source repository are never executed.
+The importer accepts public `owner/repo` references, an optional exact SHA as `owner/repo@<40 lowercase hex characters>`, HTTPS GitHub repository URLs with an optional trailing `.git`, and local directories named with an absolute or `./relative` path. Local directories are read without a network request; a local Git HEAD is recorded when available, otherwise the revision is `unversioned`. Local sources must remain unchanged during each command. GitHub input rejects query strings, fragment revisions, other hosts, and malformed names. Remote retrieval resolves the default branch commit via GitHub's API, then downloads only that commit's archive through a validated HTTPS redirect. It limits the archive body to 16 MiB and declared checkout size to 32 MiB; see [importer limits](docs/importer.md) for the full table. Repository files are scanned as data only. Scripts, templates, Makefiles, hooks, and application commands from the source repository are never executed. Repositories with several complete theme files require `--theme <exact-relative-file>` for preview or conversion; the first preview lists candidates and a pinned reference to reuse.
 
 Supported color forms are literal six-digit hex values in Kitty assignments, CSS custom properties and GTK `@define-color`, simple palette `KEY=#RRGGBB` files, and opaque `rgba(RRGGBBff)` fields in Hyprlock configuration. Named colors, CSS expressions, partial alpha, short hex, shell expansions, and arbitrary app settings are not converted. Semantic names map by exact documented aliases in `engine/importer/analyze.py`; conflicting candidates remain unresolved. Duplicate keys and malformed literal colors are reported. Analysis JSON contains source paths, format, application hint, confidence, candidates, conflicts, skipped files, revision, and license evidence. Preview lists roles, conflicts, missing roles, license status, planned files, and existing theme ID conflicts. Converted packs contain `theme.conf`, `palette.conf`, and validated `source.json` provenance; no application configuration is copied. Raw ANSI `COLOR0` through `COLOR15` values remain in `source.json` with their source paths; they are not reinterpreted as semantic roles.
 
