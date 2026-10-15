@@ -18,7 +18,11 @@ command_doctor() {
         if cmd_exists "$cmd"; then
             log_success "$cmd"
         else
-            log_warn "$cmd is unavailable; its related import or application feature will be limited."
+            case "$cmd" in
+                git) log_warn "git is unavailable; local repository HEAD attribution will be unavailable." ;;
+                python3) log_warn "python3 is unavailable; import, conversion, and GitHub pack installation require it." ;;
+                *) log_warn "$cmd is unavailable; its application reload feature will be limited." ;;
+            esac
         fi
     done
     if [[ "$missing" -ne 0 ]]; then

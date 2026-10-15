@@ -189,17 +189,23 @@ def bounded_walk(root, report, started):
         yield current, names
 
 
-def analyze(root, repository, revision, source_kind="github", source_url=None):
+def analyze(root, repository, revision, source_kind="github", source_url=None,
+            retrieval_info=None):
     started = time.monotonic()
     if not root.is_absolute() or not root.is_dir() or any(
             parent.is_symlink() for parent in (root, *root.parents)):
         raise ValueError("unsafe or missing source directory")
+    if retrieval_info is not None and (not isinstance(retrieval_info, dict) or
+            retrieval_info.get("method") != "github_api_commit_archive" or
+            retrieval_info.get("revision") != revision):
+        raise ValueError("retrieval revision does not match analyzed source")
     report = {
         "schema": 1,
         "repository": repository,
         "revision": revision,
         "source_kind": source_kind,
         "source_url": source_url or (f"https://github.com/{repository}" if source_kind == "github" else None),
+        "retrieval_info": retrieval_info,
         "retrieval": "complete",
         "mode": "analysis_only",
         "limits": {"files": MAX_FILES, "directories": MAX_DIRECTORIES,
@@ -308,13 +314,22 @@ def analyze(root, repository, revision, source_kind="github", source_url=None):
 
 
 if __name__ == "__main__":
-    if len(sys.argv) not in (4, 5):
-        sys.exit("usage: analyze.py <checkout> <repository> <revision> [local]")
+    if len(sys.argv) not in (4, 5, 6):
+        sys.exit("usage: analyze.py <checkout> <repository> <revision> [github|local] [retrieval.json|-]")
     try:
         source_kind = sys.argv[4] if len(sys.argv) == 5 else "github"
+        if len(sys.argv) == 6:
+            source_kind = sys.argv[4]
         if source_kind not in ("github", "local"):
             raise ValueError("unsupported source kind")
-        print(json.dumps(analyze(Path(sys.argv[1]), sys.argv[2], sys.argv[3], source_kind), indent=2, sort_keys=True))
-    except ValueError as exc:
+        info = None
+        if len(sys.argv) == 6 and sys.argv[5] != "-":
+            path = Path(sys.argv[5])
+            if path.is_symlink() or path.stat().st_size > 65536:
+                raise ValueError("unsafe retrieval metadata")
+            info = json.loads(path.read_text())
+        print(json.dumps(analyze(Path(sys.argv[1]), sys.argv[2], sys.argv[3], source_kind,
+                                 retrieval_info=info), indent=2, sort_keys=True))
+    except (ValueError, OSError) as exc:
         print(f"Import analysis failed: {exc}", file=sys.stderr)
         sys.exit(1)

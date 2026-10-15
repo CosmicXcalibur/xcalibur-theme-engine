@@ -2,7 +2,7 @@
 
 command_import() (
     local mode="${1:-}" repository="${2:-}" output="${3:-}" staging="" revision report_file
-    local source_kind=github source_dir="" slug
+    local source_kind=github source_dir="" retrieval_info="" source_ref="" pinned_revision="" slug
     if [[ "$mode" == install ]]; then
         [[ "$#" -eq 2 ]] || { log_error "Usage: theme import install <pack-directory>"; return 2; }
         theme_install_from_directory "$repository"
@@ -33,13 +33,22 @@ command_import() (
         repository="${repository#https://github.com/}"
         repository="${repository%/}"
         repository="${repository%.git}"
+        if [[ "$repository" == *@* ]]; then
+            pinned_revision="${repository##*@}"
+            repository="${repository%@*}"
+            if [[ ! "$pinned_revision" =~ ^[0-9a-f]{40}$ ]]; then
+                log_error "Pinned GitHub revision must be a lowercase 40-character commit SHA."
+                return 2
+            fi
+        fi
         if ! theme_install_repo_validate "$repository"; then
             log_error "Invalid GitHub repository reference: $2"
             return 2
         fi
+        source_ref="$repository${pinned_revision:+@$pinned_revision}"
     fi
-    if ! cmd_exists python3 || ! cmd_exists timeout || { [[ "$source_kind" == github ]] && ! cmd_exists git; }; then
-        log_error "Import analysis requires python3 and timeout; GitHub sources also require git."
+    if ! cmd_exists python3 || ! cmd_exists timeout; then
+        log_error "Import analysis requires python3 and timeout."
         return 1
     fi
     fs_directory_safe "${TMPDIR:-/tmp}" false || {
@@ -65,27 +74,17 @@ command_import() (
         return 1
     }
     if [[ "$source_kind" == github ]]; then
-    if ! GIT_TERMINAL_PROMPT=0 GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 \
-        GIT_PROTOCOL_FROM_USER=0 GIT_LFS_SKIP_SMUDGE=1 \
-        timeout 60s git -c init.templateDir=/dev/null -c core.hooksPath=/dev/null \
-        -c protocol.file.allow=never clone \
-        --depth 1 --no-recurse-submodules --quiet \
-        "https://github.com/$repository.git" "$staging/repository"; then
-        log_error "Unable to retrieve GitHub repository: $repository"
-        return 1
-    fi
-    revision="$(GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 \
-        GIT_PROTOCOL_FROM_USER=0 timeout 10s git -c init.templateDir=/dev/null -c core.hooksPath=/dev/null \
-        -c protocol.file.allow=never -C "$staging/repository" \
-        rev-parse --verify HEAD)" || {
-        log_error "Unable to identify repository revision: $repository"
-        return 1
-    }
-    if [[ ! "$revision" =~ ^[0-9a-f]{40}([0-9a-f]{24})?$ ]]; then
-        log_error "Repository returned an invalid revision: $repository"
-        return 1
-    fi
-    source_dir="$staging/repository"
+        retrieval_info="$staging/retrieval.json"
+        revision="$(timeout 75s python3 "$ENGINE_DIR/importer/retrieve.py" \
+            "$source_ref" "$staging/repository" "$retrieval_info")" || {
+            log_error "Unable to retrieve bounded GitHub source: $repository"
+            return 1
+        }
+        if [[ ! "$revision" =~ ^[0-9a-f]{40}$ || ! -f "$retrieval_info" ]]; then
+            log_error "Retrieval returned invalid commit information: $repository"
+            return 1
+        fi
+        source_dir="$staging/repository"
     else
         revision=unversioned
         if cmd_exists git && [[ -d "$source_dir/.git" && ! -L "$source_dir/.git" ]]; then
@@ -102,13 +101,13 @@ command_import() (
     fi
     report_file="$staging/report.json"
     if [[ "$mode" == analyze ]]; then
-        python3 "$ENGINE_DIR/importer/analyze.py" "$source_dir" "$repository" "$revision" "$source_kind" || {
+        python3 "$ENGINE_DIR/importer/analyze.py" "$source_dir" "$repository" "$revision" "$source_kind" "${retrieval_info:--}" || {
             log_error "Unable to analyze source: $2"
             return 1
         }
         return 0
     fi
-    if ! python3 "$ENGINE_DIR/importer/analyze.py" "$source_dir" "$repository" "$revision" "$source_kind" > "$report_file"; then
+    if ! python3 "$ENGINE_DIR/importer/analyze.py" "$source_dir" "$repository" "$revision" "$source_kind" "${retrieval_info:--}" > "$report_file"; then
         log_error "Unable to analyze source: $2"
         return 1
     fi
@@ -117,16 +116,6 @@ command_import() (
     else
         [[ "$output" == /* ]] || output="$PWD/$output"
         python3 "$ENGINE_DIR/importer/convert.py" convert "$report_file" "$output" || return 1
-        if ! theme_manifest_load "$output/theme.conf" "" ||
-           ! theme_definition_load "$output/palette.conf" "" ||
-           ! python3 "$ENGINE_DIR/importer/convert.py" validate-metadata "$output/source.json" "$THEME_ID"; then
-            log_error "Converted output failed native theme validation: $output"
-            if fs_directory_safe "$output" false; then
-                rm -f -- "$output/theme.conf" "$output/palette.conf" "$output/source.json" || true
-                rmdir -- "$output" || log_error "Review and remove invalid conversion output manually: $output"
-            fi
-            return 1
-        fi
         log_success "Validated converted theme pack: $output"
     fi
 )

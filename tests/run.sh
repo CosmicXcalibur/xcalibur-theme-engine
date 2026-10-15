@@ -2,6 +2,7 @@
 set -Eeuo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+ENGINE_DIR="$ROOT/engine"
 TEST_TMP="$(mktemp -d "${TMPDIR:-/tmp}/xcalibur-tests.XXXXXX")"
 trap 'rm -rf -- "$TEST_TMP"' EXIT
 EXPECTED_FAILURE_LOG="$TEST_TMP/expected-failures.log"
@@ -393,10 +394,14 @@ export TMPDIR
 THEME_ROOT="$TEST_TMP/native-root"
 THEMES_DIR="$THEME_ROOT/themes"
 mkdir -p "$THEME_ROOT"
-git() {
-    local destination="${@: -1}"
-    mkdir -p "$destination"
-    cp "$TEST_TMP/native-fixture/"* "$destination/"
+python3() {
+    if [[ "$1" == */importer/retrieve.py ]]; then
+        mkdir -p "$3"
+        command cp "$TEST_TMP/native-fixture/"* "$3/"
+        printf '%040d\n' 0
+        return
+    fi
+    command python3 "$@"
 }
 timeout() { local duration="$1"; shift; "$@"; }
 theme_install install owner/repo
@@ -421,16 +426,19 @@ expect_failure 'themes directory outside engine root' theme_install install owne
 THEME_ROOT="$TEST_TMP/native-failure-root"
 THEMES_DIR="$THEME_ROOT/themes"
 mkdir -p "$THEME_ROOT"
-cp() {
-    if [[ "$1" == -- && "$2" == */repository/palette.conf && "$3" == "$THEMES_DIR/"* ]]; then
-        return 1
+python3() {
+    if [[ "$1" == */importer/retrieve.py ]]; then
+        mkdir -p "$3"
+        command cp "$TEST_TMP/native-fixture/"* "$3/"
+        return
     fi
-    command cp "$@"
+    if [[ "${2:-}" == install-pack ]]; then return 91; fi
+    command python3 "$@"
 }
-expect_failure 'native copy failure rolls back' theme_install install owner/repo
+expect_failure 'native publication failure leaves no pack' theme_install install owner/repo
 [[ ! -e "$THEMES_DIR/xcalibur-test" ]]
 [[ -z "$(find "$TMPDIR" -mindepth 1 -print -quit)" ]]
-unset -f cp
+unset -f python3
 unset -f timeout
 
 mkdir -p "$TEST_TMP/repo/dotfiles/kitty" "$TEST_TMP/repo/waybar"
@@ -459,62 +467,62 @@ assert 'BACKGROUND' not in report['semantic_roles']
 assert any(item['role'] == 'BACKGROUND' for item in report['conflicts'])
 PY
 
-unset -f git
+unset -f python3
 source "$ROOT/engine/commands/import.sh"
 ENGINE_DIR="$ROOT/engine"
 mkdir -p "$TEST_TMP/mock-bin" "$TEST_TMP/import-stage"
-cat > "$TEST_TMP/mock-bin/git" <<'MOCK_GIT'
+IMPORT_REAL_PYTHON="$(command -v python3)"
+cat > "$TEST_TMP/mock-bin/python3" <<'MOCK_PYTHON'
 #!/usr/bin/env bash
-[[ "$GIT_CONFIG_GLOBAL" == /dev/null && "$GIT_CONFIG_NOSYSTEM" == 1 ]] || exit 90
-printf '%s\n' "$*" >> "$IMPORT_GIT_LOG"
-operation=""
-for argument in "$@"; do
-    case "$argument" in clone|rev-parse) operation="$argument" ;; esac
-done
-case "$operation" in
-    clone)
-        mkdir -p "${@: -1}"
-        [[ "$IMPORT_GIT_MODE" != clone-fail ]] || exit 11
-        if [[ "$IMPORT_GIT_MODE" == fixture ]]; then
-            cp -a -- "$IMPORT_FIXTURE/." "${@: -1}/"
-        fi
-        ;;
-    rev-parse)
-        [[ "$IMPORT_GIT_MODE" != revision-fail ]] || exit 12
-        printf '%040d\n' 0
-        ;;
-    *) exit 13 ;;
-esac
-MOCK_GIT
-chmod +x "$TEST_TMP/mock-bin/git"
+if [[ "$1" != */engine/importer/retrieve.py ]]; then
+    exec "$IMPORT_REAL_PYTHON" "$@"
+fi
+printf '%s\n' "$*" >> "$IMPORT_RETRIEVE_LOG"
+[[ "$IMPORT_RETRIEVE_MODE" != retrieve-fail ]] || exit 11
+repository="${2%@*}" destination="$3" info="$4"
+mkdir -p -- "$destination"
+if [[ "$IMPORT_RETRIEVE_MODE" == fixture ]]; then
+    cp -a -- "$IMPORT_FIXTURE/." "$destination/"
+fi
+revision="$(printf '%040d' 0)"
+cat > "$info" <<JSON
+{"method":"github_api_commit_archive","revision":"$revision","archive_url":"https://codeload.github.com/$repository/tar.gz/$revision","archive_sha256":"$(printf '%064d' 1)","download_bytes":100}
+JSON
+if [[ "$IMPORT_RETRIEVE_MODE" == invalid-revision ]]; then
+    printf 'invalid\n'
+else
+    printf '%s\n' "$revision"
+fi
+MOCK_PYTHON
+chmod +x "$TEST_TMP/mock-bin/python3"
 PATH="$TEST_TMP/mock-bin:$PATH"
 TMPDIR="$TEST_TMP/import-stage"
-IMPORT_GIT_LOG="$TEST_TMP/import-git.log"
-export PATH TMPDIR IMPORT_GIT_LOG
+IMPORT_RETRIEVE_LOG="$TEST_TMP/import-retrieve.log"
+export PATH TMPDIR IMPORT_RETRIEVE_LOG IMPORT_REAL_PYTHON
 expect_failure 'invalid GitHub URL' command_import analyze https://example.invalid/owner/repo
 expect_failure 'unsafe GitHub revision' command_import analyze https://github.com/owner/repo?ref=main
-[[ ! -s "$IMPORT_GIT_LOG" ]]
+[[ ! -s "$IMPORT_RETRIEVE_LOG" ]]
 import_staging_empty() {
     [[ -z "$(find "$TMPDIR" -mindepth 1 -print -quit)" ]]
 }
-IMPORT_GIT_MODE=clone-fail
-export IMPORT_GIT_MODE
-expect_failure 'failed clone cleans staging' command_import analyze owner/repo
+IMPORT_RETRIEVE_MODE=retrieve-fail
+export IMPORT_RETRIEVE_MODE
+expect_failure 'failed retrieval cleans staging' command_import analyze owner/repo
 import_staging_empty
 timeout() {
-    [[ "$IMPORT_GIT_MODE" != timeout ]] || return 124
+    [[ "$IMPORT_RETRIEVE_MODE" != timeout ]] || return 124
     command timeout "$@"
 }
-IMPORT_GIT_MODE=timeout
-expect_failure 'clone timeout cleans staging' command_import analyze owner/repo
+IMPORT_RETRIEVE_MODE=timeout
+expect_failure 'retrieval timeout cleans staging' command_import analyze owner/repo
 import_staging_empty
 unset -f timeout
-[[ "$(cat "$EXPECTED_FAILURE_LOG")" == *'Unable to retrieve GitHub repository: owner/repo'* ]]
-IMPORT_GIT_MODE=revision-fail
-expect_failure 'failed revision lookup cleans staging' command_import analyze owner/repo
+[[ "$(cat "$EXPECTED_FAILURE_LOG")" == *'Unable to retrieve bounded GitHub source: owner/repo'* ]]
+IMPORT_RETRIEVE_MODE=invalid-revision
+expect_failure 'invalid retrieval revision cleans staging' command_import analyze owner/repo
 import_staging_empty
-[[ "$(cat "$EXPECTED_FAILURE_LOG")" == *'Unable to identify repository revision: owner/repo'* ]]
-IMPORT_GIT_MODE=ok
+[[ "$(cat "$EXPECTED_FAILURE_LOG")" == *'Retrieval returned invalid commit information: owner/repo'* ]]
+IMPORT_RETRIEVE_MODE=ok
 python3() { exit 77; }
 expect_failure 'shell exit during analysis cleans staging' command_import analyze owner/repo
 import_staging_empty
@@ -531,7 +539,7 @@ assert report['mode'] == 'analysis_only'
 assert report['installed'] is False and report['applied'] is False
 assert report['revision'] == '0' * 40
 PY
-[[ "$(wc -l < "$IMPORT_GIT_LOG")" -ge 8 ]]
+[[ "$(wc -l < "$IMPORT_RETRIEVE_LOG")" -ge 5 ]]
 rm() {
     if [[ "$*" == *xcalibur-import.* ]]; then return 99; fi
     command rm "$@"
@@ -545,27 +553,19 @@ mkdir -p "$TEST_TMP/import-stage"
 mkdir -p "$TEST_TMP/convert-fixture"
 printf 'background #112233\nforeground #eeeeee\n' > "$TEST_TMP/convert-fixture/kitty.conf"
 IMPORT_FIXTURE="$TEST_TMP/convert-fixture"
-IMPORT_GIT_MODE=fixture
-export IMPORT_FIXTURE IMPORT_GIT_MODE
+IMPORT_RETRIEVE_MODE=fixture
+export IMPORT_FIXTURE IMPORT_RETRIEVE_MODE
 command_import preview owner/repo > "$TEST_TMP/preview.txt"
 [[ "$(cat "$TEST_TMP/preview.txt")" == *'Planned theme ID: owner-repo'* ]]
+pin="$(printf '%040d' 0)"
+command_import preview "owner/repo@$pin" > "$TEST_TMP/pinned-preview.txt"
+[[ "$(cat "$TEST_TMP/pinned-preview.txt")" == *"Pinned source for next command: owner/repo@$pin"* ]]
+[[ "$(cat "$IMPORT_RETRIEVE_LOG")" == *"owner/repo@$pin"* ]]
 [[ ! -e "$TEST_TMP/converted pack" ]]
 command_import convert owner/repo "$TEST_TMP/converted pack" > "$TEST_TMP/convert-output.txt"
 [[ -f "$TEST_TMP/converted pack/theme.conf" ]]
 [[ -f "$TEST_TMP/converted pack/palette.conf" ]]
 expect_failure 'conversion collision' command_import convert owner/repo "$TEST_TMP/converted pack"
-python3() {
-    if [[ "$1" == "$ROOT/engine/importer/convert.py" && "$2" == convert ]]; then
-        mkdir -p -- "$4"
-        printf 'THEME_ID=invalid\n' > "$4/theme.conf"
-        printf 'XCALIBUR_DEFINITION_VERSION=1\n' > "$4/palette.conf"
-        return 0
-    fi
-    command python3 "$@"
-}
-expect_failure 'invalid converted pack rejected and removed' command_import convert owner/repo "$TEST_TMP/invalid-converted-pack"
-[[ ! -e "$TEST_TMP/invalid-converted-pack" ]]
-unset -f python3
 THEME_ROOT="$TEST_TMP/converted-install-root"
 THEMES_DIR="$THEME_ROOT/themes"
 mkdir -p "$THEME_ROOT"
@@ -634,13 +634,13 @@ expect_failure 'tampered import metadata rejected' command_import install "$TEST
 THEME_ROOT="$TEST_TMP/metadata-failure-root"
 THEMES_DIR="$THEME_ROOT/themes"
 mkdir -p "$THEME_ROOT"
-cp() {
-    if [[ "$*" == *source.json* ]]; then return 91; fi
-    command cp "$@"
+python3() {
+    if [[ "${2:-}" == install-pack ]]; then return 91; fi
+    command python3 "$@"
 }
-expect_failure 'metadata copy failure rolls back theme directory' \
+expect_failure 'metadata publication failure leaves no theme directory' \
     command_import install "$TEST_TMP/local converted again"
-unset -f cp
+unset -f python3
 [[ ! -e "$THEMES_DIR/local-local-source" ]]
 rm -- "$TEST_TMP/local converted/source.json"
 ln -s "$TEST_TMP/source-valid.json" "$TEST_TMP/local converted/source.json"

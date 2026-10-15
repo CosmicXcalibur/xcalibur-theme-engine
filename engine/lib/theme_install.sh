@@ -20,38 +20,9 @@ theme_install_root_file_validate() {
         [[ "$(stat -c %s -- "$file")" -le 262144 ]]
 }
 
-theme_install_rollback() {
-    local theme_dir="$1"
-    if ! fs_directory_safe "$THEMES_DIR" false ||
-       [[ ! -d "$theme_dir" || -L "$theme_dir" ]]; then
-        log_warn "Partial theme directory needs manual cleanup: $theme_dir"
-        return 1
-    fi
-    # Only these names are created by the installer. Leave an unexpected
-    # directory entry untouched rather than recursively removing it.
-    if ! rm -f -- "$theme_dir/theme.conf" "$theme_dir/palette.conf" "$theme_dir/source.json" ||
-       ! rmdir -- "$theme_dir"; then
-        log_warn "Partial theme directory needs manual cleanup: $theme_dir"
-        return 1
-    fi
-}
-
 # Install only validated root data files from a local, reviewable pack.
 theme_install_from_directory() (
-    local source_dir="$1" theme_id theme_dir="" destination_created=false complete=false
-    local has_source_metadata=false
-    theme_install_local_cleanup() {
-        local result=$?
-        trap - EXIT
-        if [[ "$destination_created" == true && "$complete" != true ]]; then
-            theme_install_rollback "$theme_dir" || result=1
-        fi
-        exit "$result"
-    }
-    trap 'theme_install_local_cleanup' EXIT
-    trap 'exit 129' HUP
-    trap 'exit 130' INT
-    trap 'exit 143' TERM
+    local source_dir="$1" theme_id theme_dir=""
     [[ "$source_dir" == /* ]] || source_dir="$PWD/$source_dir"
     if ! fs_directory_safe "$source_dir" false ||
        ! theme_install_root_file_validate "$source_dir/theme.conf" ||
@@ -75,7 +46,6 @@ theme_install_from_directory() (
             log_error "Invalid or unsafe source metadata: $source_dir/source.json"
             return 1
         fi
-        has_source_metadata=true
     fi
     theme_dir="$THEMES_DIR/$theme_id"
     if [[ "$THEMES_DIR" != "$THEME_ROOT/themes" ]] ||
@@ -87,29 +57,12 @@ theme_install_from_directory() (
         log_error "Theme '$theme_id' is already installed."
         return 1
     fi
-    if ! mkdir -m 700 -- "$theme_dir"; then
-        log_error "Unable to claim theme directory: $theme_dir"
-        return 1
-    fi
-    destination_created=true
-    if ! cp -- "$source_dir/theme.conf" "$theme_dir/theme.conf" ||
-       ! cp -- "$source_dir/palette.conf" "$theme_dir/palette.conf"; then
+    if ! cmd_exists python3 ||
+       ! python3 "$ENGINE_DIR/importer/convert.py" install-pack \
+           "$source_dir" "$theme_dir" "$theme_id"; then
         log_error "Unable to install validated theme '$theme_id'."
         return 1
     fi
-    if [[ "$has_source_metadata" == true ]] &&
-       ! cp -- "$source_dir/source.json" "$theme_dir/source.json"; then
-        log_error "Unable to install source metadata for '$theme_id'."
-        return 1
-    fi
-    if ! theme_manifest_load "$theme_dir/theme.conf" "$theme_id" ||
-       ! theme_definition_load "$theme_dir/palette.conf" "$theme_id" ||
-       { [[ "$has_source_metadata" == true ]] &&
-           ! python3 "$ENGINE_DIR/importer/convert.py" validate-metadata "$theme_dir/source.json" "$theme_id"; }; then
-        log_error "Unable to install validated theme '$theme_id'."
-        return 1
-    fi
-    complete=true
     log_success "Theme installed: $theme_id"
 )
 
@@ -126,15 +79,14 @@ theme_install() (
     local definition=""
     local theme_id=""
     local theme_dir=""
-    local destination_created=false
 
     if ! theme_install_repo_validate "$repository"; then
         log_error "Invalid GitHub repository reference: $repository"
         return 2
     fi
 
-    if ! cmd_exists git || ! cmd_exists timeout; then
-        log_error "Native installation requires git and timeout."
+    if ! cmd_exists python3 || ! cmd_exists timeout; then
+        log_error "Native GitHub installation requires python3 and timeout."
         return 1
     fi
 
@@ -165,16 +117,9 @@ theme_install() (
     manifest="$repository_dir/theme.conf"
     definition="$repository_dir/palette.conf"
 
-    if ! GIT_TERMINAL_PROMPT=0 GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 \
-        GIT_PROTOCOL_FROM_USER=0 GIT_LFS_SKIP_SMUDGE=1 \
-        timeout 60s git -c init.templateDir=/dev/null -c core.hooksPath=/dev/null \
-        -c protocol.file.allow=never clone \
-        --depth 1 \
-        --no-recurse-submodules \
-        --quiet \
-        "https://github.com/$repository.git" \
-        "$repository_dir"; then
-        log_error "Unable to retrieve GitHub repository: $repository"
+    if ! timeout 75s python3 "$ENGINE_DIR/importer/retrieve.py" "$repository" \
+        "$repository_dir" "$staging_dir/retrieval.json" >/dev/null; then
+        log_error "Unable to retrieve bounded GitHub repository: $repository"
         return 1
     fi
 

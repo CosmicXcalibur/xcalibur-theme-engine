@@ -188,6 +188,11 @@ class ImporterTests(unittest.TestCase):
                 converter.convert(report, output)
         self.assertFalse(output.exists())
         self.assertEqual(list(self.root.glob(".xcalibur-convert-*")), [])
+        with mock.patch.object(converter, "validate_native_stage", side_effect=ValueError("invalid")):
+            with self.assertRaisesRegex(ValueError, "invalid"):
+                converter.convert(report, output)
+        self.assertFalse(output.exists())
+        self.assertEqual(list(self.root.glob(".xcalibur-convert-*")), [])
         with mock.patch.object(converter, "rename_exclusive", side_effect=KeyboardInterrupt):
             with self.assertRaises(KeyboardInterrupt):
                 converter.convert(report, output)
@@ -220,6 +225,85 @@ except InterruptedError:
         self.assertEqual(result.returncode, 143, result.stderr)
         self.assertFalse(output.exists())
         self.assertEqual(list(self.root.glob(".xcalibur-convert-*")), [])
+
+    def test_parent_replacement_does_not_redirect_output(self):
+        report = self.report()
+        parent = self.root / "output-parent"
+        moved = self.root / "moved-parent"
+        outside = self.root / "outside"
+        parent.mkdir()
+        outside.mkdir()
+        original = converter.validate_native_stage
+
+        def replace_parent(stage_fd, theme_id):
+            original(stage_fd, theme_id)
+            parent.rename(moved)
+            parent.symlink_to(outside, target_is_directory=True)
+
+        with mock.patch.object(converter, "validate_native_stage", side_effect=replace_parent):
+            with self.assertRaisesRegex(ValueError, "parent changed"):
+                converter.convert(report, parent / "pack")
+        self.assertEqual(list(outside.iterdir()), [])
+        self.assertEqual(list(moved.iterdir()), [])
+
+    def test_install_pack_is_exclusive_and_cleans_failed_stage(self):
+        pack = self.root / "pack"
+        converter.convert(self.report(), pack)
+        themes = self.root / "themes"
+        themes.mkdir()
+        destination = themes / "owner-example"
+        with mock.patch.object(converter, "copy_stage_file", side_effect=OSError("copy failed")):
+            with self.assertRaisesRegex(OSError, "copy failed"):
+                converter.install_pack(pack, destination, "owner-example")
+        self.assertEqual(list(themes.iterdir()), [])
+        with mock.patch.object(converter, "validate_native_stage", side_effect=ValueError("invalid")):
+            with self.assertRaisesRegex(ValueError, "invalid"):
+                converter.install_pack(pack, destination, "owner-example")
+        self.assertEqual(list(themes.iterdir()), [])
+        with mock.patch.object(converter, "rename_exclusive", side_effect=OSError("publish failed")):
+            with self.assertRaisesRegex(OSError, "publish failed"):
+                converter.install_pack(pack, destination, "owner-example")
+        self.assertEqual(list(themes.iterdir()), [])
+        converter.install_pack(pack, destination, "owner-example")
+        (destination / "user-file").write_text("preserve")
+        with self.assertRaisesRegex(ValueError, "already exists"):
+            converter.install_pack(pack, destination, "owner-example")
+        self.assertEqual((destination / "user-file").read_text(), "preserve")
+
+    def test_install_pack_parent_replacement_and_tampered_metadata(self):
+        pack = self.root / "pack"
+        report = self.report()
+        report["retrieval_info"] = {
+            "method": "github_api_commit_archive", "revision": "a" * 40,
+            "archive_url": "https://codeload.github.com/Owner/example/tar.gz/" + "a" * 40,
+            "archive_sha256": "f" * 64, "download_bytes": 100,
+        }
+        converter.convert(report, pack)
+        themes = self.root / "themes"
+        themes.mkdir()
+        outside = self.root / "outside"
+        outside.mkdir()
+        moved = self.root / "moved"
+        original = converter.validate_native_stage
+
+        def replace_parent(stage_fd, theme_id, metadata_required=True):
+            original(stage_fd, theme_id, metadata_required)
+            themes.rename(moved)
+            themes.symlink_to(outside, target_is_directory=True)
+
+        with mock.patch.object(converter, "validate_native_stage", side_effect=replace_parent):
+            with self.assertRaisesRegex(ValueError, "themes directory changed"):
+                converter.install_pack(pack, themes / "owner-example", "owner-example")
+        self.assertEqual(list(outside.iterdir()), [])
+        self.assertEqual(list(moved.iterdir()), [])
+        themes.unlink()
+        moved.rename(themes)
+        metadata = json.loads((pack / "source.json").read_text())
+        metadata["revision"] = "b" * 40
+        (pack / "source.json").write_text(json.dumps(metadata))
+        with self.assertRaisesRegex(ValueError, "provenance"):
+            converter.install_pack(pack, themes / "owner-example", "owner-example")
+        self.assertEqual(list(themes.iterdir()), [])
 
     def test_source_root_symlink_is_rejected(self):
         report = self.report()
