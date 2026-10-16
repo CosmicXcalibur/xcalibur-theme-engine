@@ -57,6 +57,43 @@ class ImporterTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             converter.convert(report, output)
 
+    def test_css_comments_and_strings_do_not_supply_colors(self):
+        source = self.root / "css"
+        source.mkdir()
+        (source / "theme.css").write_text(
+            "/* --background: #000000; @define-color foreground #FFFFFF; */\n"
+            ".example::before { content: '--background: #123456;'; }\n"
+            ":root { --background: #112233; --foreground: #DDEEFF; }\n"
+        )
+        report = analyzer.analyze(source, "owner/css", "a" * 40)
+        self.assertEqual(len(report["theme_candidates"]), 1)
+        self.assertEqual(report["semantic_roles"]["BACKGROUND"]["value"], "#112233")
+        self.assertEqual(report["semantic_roles"]["FOREGROUND"]["value"], "#DDEEFF")
+        self.assertEqual(report["conflicts"], [])
+        converter.convert(report, self.root / "css-pack")
+        self.assertIn("BACKGROUND=#112233", (self.root / "css-pack/palette.conf").read_text())
+
+    def test_license_status_must_match_evidence(self):
+        report = self.report()
+        theme_id = converter.plan(report)[0]
+        metadata = converter.source_metadata(report, theme_id)
+        forged = json.loads(json.dumps(metadata))
+        forged["license_status"] = "present_unverified"
+        with self.assertRaisesRegex(ValueError, "license status conflicts"):
+            converter.source_metadata(forged, theme_id)
+        (self.root / "source/LICENSE").write_text("All rights reserved.\n")
+        report = analyzer.analyze(self.root / "source", "Owner/example", "a" * 40)
+        metadata = converter.source_metadata(report, theme_id)
+        self.assertEqual(metadata["license_status"], "restrictive_terms_found")
+        forged = json.loads(json.dumps(metadata))
+        forged["license_status"] = "present_unverified"
+        with self.assertRaisesRegex(ValueError, "license status conflicts"):
+            converter.source_metadata(forged, theme_id)
+        forged = json.loads(json.dumps(metadata))
+        forged["license_paths"] = ["elsewhere/LICENSE"]
+        with self.assertRaisesRegex(ValueError, "inconsistent license file inventory"):
+            converter.source_metadata(forged, theme_id)
+
     def test_multiple_kitty_variants_require_exact_selection(self):
         source = self.root / "variants"
         themes = source / "themes"

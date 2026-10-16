@@ -7,7 +7,11 @@ command_status() {
         bad=1
     elif [[ -f "$CURRENT_THEME_FILE" ]]; then
         selected="$(< "$CURRENT_THEME_FILE")"
-        if ! theme_id_validate "$selected" || [[ ! -d "$THEMES_DIR/$selected" ]] ||
+        if ! theme_id_validate "$selected" ||
+           ! fs_directory_safe "$THEMES_DIR" false ||
+           [[ ! -d "$THEMES_DIR/$selected" || -L "$THEMES_DIR/$selected" ]] ||
+           ! theme_install_root_file_validate "$THEMES_DIR/$selected/theme.conf" ||
+           ! theme_install_root_file_validate "$THEMES_DIR/$selected/palette.conf" ||
            ! theme_manifest_load "$THEMES_DIR/$selected/theme.conf" "$selected" ||
            ! theme_definition_load "$THEMES_DIR/$selected/palette.conf" "$selected"; then
             selected="invalid or missing: $selected"

@@ -37,6 +37,46 @@ ROLES = {
     "selection": "SELECTION", "selection_background": "SELECTION",
     "highlight": "HIGHLIGHT",
 }
+
+
+def css_code(content):
+    """Mask CSS comments and quoted strings before looking for declarations."""
+    result = []
+    state = "code"
+    index = 0
+    while index < len(content):
+        char = content[index]
+        following = content[index + 1] if index + 1 < len(content) else ""
+        if state == "code":
+            if char == "/" and following == "*":
+                result.extend("  ")
+                index += 2
+                state = "comment"
+                continue
+            if char in ("'", '"'):
+                state = char
+                result.append(" ")
+            else:
+                result.append(char)
+        elif state == "comment":
+            if char == "*" and following == "/":
+                result.extend("  ")
+                index += 2
+                state = "code"
+                continue
+            result.append("\n" if char == "\n" else " ")
+        else:
+            if char == "\\" and following:
+                result.extend("  ")
+                index += 2
+                continue
+            if char == state:
+                state = "code"
+            result.append("\n" if char == "\n" else " ")
+        index += 1
+    return "".join(result)
+
+
 def validate_selector(selector):
     """A selector is one exact, repository-relative source file path."""
     if not isinstance(selector, str) or not selector or len(selector) > 1024 or \
@@ -100,7 +140,7 @@ def adapter_detailed(path, content):
         return "hyprlock", colors, occurrences, diagnostics
     if lower.endswith(".css"):
         colors = {}
-        for match in CSS.finditer(content):
+        for match in CSS.finditer(css_code(content)):
             name = (match.group(1) or match.group(2)).lower().replace("-", "_")
             record(colors, name, match.group(3), "css")
         return "css", colors, occurrences, diagnostics

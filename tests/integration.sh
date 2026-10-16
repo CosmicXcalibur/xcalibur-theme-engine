@@ -175,11 +175,11 @@ PY
 grep -q 'Planned theme ID: local-source-theme' "$CASE_DIR/import-preview.txt"
 grep -q 'Installation conflict: none detected' "$CASE_DIR/import-preview.txt"
 [[ ! -e "$CASE_DIR/checkout/themes/local-source-theme" ]]
-"$cli" import convert "$import_source" "$CASE_DIR/converted theme" > "$CASE_DIR/import-convert.txt"
+(cd "$CASE_DIR" && "$cli" import convert "$import_source" './converted theme') > "$CASE_DIR/import-convert.txt"
 [[ -f "$CASE_DIR/converted theme/theme.conf" && -f "$CASE_DIR/converted theme/palette.conf" ]]
 python3 "$CASE_DIR/checkout/engine/importer/convert.py" validate-metadata \
     "$CASE_DIR/converted theme/source.json" local-source-theme
-"$cli" import install "$CASE_DIR/converted theme" > "$CASE_DIR/import-install.txt"
+(cd "$CASE_DIR" && "$cli" import install './converted theme') > "$CASE_DIR/import-install.txt"
 [[ -f "$CASE_DIR/checkout/themes/local-source-theme/source.json" ]]
 [[ "$(< "$CASE_DIR/checkout/runtime/state/current_theme")" == xcalibur-test ]]
 sha256sum -c "$CASE_DIR/import-application-before" > /dev/null
@@ -188,4 +188,121 @@ if "$cli" import install "$CASE_DIR/converted theme" > "$CASE_DIR/import-collisi
     exit 1
 fi
 grep -q 'already installed' "$CASE_DIR/import-collision.txt"
+
+# Public GitHub installation reuses the importer in this disposable checkout.
+# Only the retrieval subprocess is mocked; analysis, conversion, validation,
+# publication, and CLI argument handling run through the real engine code.
+mkdir -p "$CASE_DIR/github-variants/themes" "$CASE_DIR/github-single" \
+    "$CASE_DIR/github-unsupported" "$CASE_DIR/github-native"
+printf 'background #303446\nforeground #C6D0F5\ncursor #F2D5CF\n' \
+    > "$CASE_DIR/github-variants/themes/frappe.conf"
+printf 'background #1E1E2E\nforeground #CDD6F4\ncursor #F5E0DC\ncolor0 #11111B\n' \
+    > "$CASE_DIR/github-variants/themes/mocha.conf"
+ln -s mocha.conf "$CASE_DIR/github-variants/themes/linked.conf"
+printf 'MIT License. Review upstream terms.\n' > "$CASE_DIR/github-variants/LICENSE"
+printf 'background #102030\nforeground #E0E0E0\n' > "$CASE_DIR/github-single/kitty.conf"
+printf 'No supported colors here.\n' > "$CASE_DIR/github-unsupported/README.md"
+sed 's/THEME_ID=xcalibur-test/THEME_ID=native-import-test/' \
+    "$ROOT/themes/xcalibur-test/theme.conf" > "$CASE_DIR/github-native/theme.conf"
+cp -- "$ROOT/themes/xcalibur-test/palette.conf" "$CASE_DIR/github-native/palette.conf"
+REAL_PYTHON3="$(command -v python3)"
+FIXTURE_SHA="$(printf '%040d' 7)"
+export REAL_PYTHON3 FIXTURE_SHA CASE_DIR
+cat > "$CASE_DIR/mock-bin/python3" <<'MOCK_PYTHON'
+#!/usr/bin/env bash
+if [[ "$1" == */engine/importer/convert.py && "${2:-}" == install-pack &&
+      "${FAIL_PUBLICATION:-}" == 1 ]]; then
+    exit 91
+fi
+if [[ "$1" != */engine/importer/retrieve.py ]]; then
+    exec "$REAL_PYTHON3" "$@"
+fi
+reference="$2" destination="$3" info="$4"
+printf '%s\n' "$reference" >> "$CASE_DIR/retrieval-requests.log"
+repository="${reference%@*}"
+case "$repository" in
+    catppuccin/kitty) fixture="$CASE_DIR/github-variants" ;;
+    owner/single|owner/failure) fixture="$CASE_DIR/github-single" ;;
+    owner/unsupported) fixture="$CASE_DIR/github-unsupported" ;;
+    owner/native) fixture="$CASE_DIR/github-native" ;;
+    *) exit 89 ;;
+esac
+[[ "$reference" != *@* || "${reference##*@}" == "$FIXTURE_SHA" ]] || exit 90
+mkdir -- "$destination"
+cp -a -- "$fixture/." "$destination/"
+cat > "$info" <<JSON
+{"method":"github_api_commit_archive","revision":"$FIXTURE_SHA","archive_url":"https://codeload.github.com/$repository/tar.gz/$FIXTURE_SHA","archive_sha256":"$(printf '%064d' 1)","download_bytes":100}
+JSON
+printf '%s\n' "$FIXTURE_SHA"
+MOCK_PYTHON
+chmod +x "$CASE_DIR/mock-bin/python3"
+if "$cli" install https://example.invalid/owner/repo > "$CASE_DIR/install-invalid.log" 2>&1; then
+    printf 'Invalid public installation source unexpectedly succeeded\n' >&2
+    exit 1
+fi
+[[ ! -e "$CASE_DIR/retrieval-requests.log" ]]
+if "$cli" install "catppuccin/kitty@$FIXTURE_SHA" > "$CASE_DIR/install-ambiguous.log" 2>&1; then
+    printf 'Ambiguous public installation unexpectedly succeeded\n' >&2
+    exit 1
+fi
+grep -q 'themes/mocha.conf' "$CASE_DIR/install-ambiguous.log"
+grep -q -- '--theme <exact-relative-file>' "$CASE_DIR/install-ambiguous.log"
+[[ -z "$(find "$CASE_DIR/checkout/themes" -maxdepth 1 -name 'catppuccin-kitty-*' -print -quit)" ]]
+requests_before="$(wc -l < "$CASE_DIR/retrieval-requests.log")"
+if "$cli" install "catppuccin/kitty@$FIXTURE_SHA" --theme ../mocha.conf \
+    > "$CASE_DIR/install-unsafe-selector.log" 2>&1; then
+    printf 'Unsafe public candidate selector unexpectedly succeeded\n' >&2
+    exit 1
+fi
+[[ "$(wc -l < "$CASE_DIR/retrieval-requests.log")" == "$requests_before" ]]
+if "$cli" install "catppuccin/kitty@$FIXTURE_SHA" --theme themes/linked.conf \
+    > "$CASE_DIR/install-symlink-selector.log" 2>&1; then
+    printf 'Symlinked public candidate selector unexpectedly succeeded\n' >&2
+    exit 1
+fi
+[[ -z "$(find "$CASE_DIR/checkout/themes" -maxdepth 1 -name 'catppuccin-kitty-*' -print -quit)" ]]
+"$cli" install "catppuccin/kitty@$FIXTURE_SHA" --theme themes/mocha.conf \
+    > "$CASE_DIR/install-mocha.log"
+mocha_pack="$(find "$CASE_DIR/checkout/themes" -maxdepth 1 -type d \
+    -name 'catppuccin-kitty-themes-mocha-*' -print -quit)"
+[[ -n "$mocha_pack" ]]
+grep -q '^BACKGROUND=#1E1E2E$' "$mocha_pack/palette.conf"
+grep -q '^FOREGROUND=#CDD6F4$' "$mocha_pack/palette.conf"
+"$REAL_PYTHON3" "$CASE_DIR/checkout/engine/importer/convert.py" validate-metadata \
+    "$mocha_pack/source.json" "$(basename "$mocha_pack")"
+"$REAL_PYTHON3" - "$mocha_pack/source.json" "$FIXTURE_SHA" <<'PY'
+import json, sys
+with open(sys.argv[1], encoding="utf-8") as source:
+    metadata = json.load(source)
+assert metadata["revision"] == sys.argv[2]
+assert metadata["selected_candidate"]["path"] == "themes/mocha.conf"
+assert metadata["role_sources"]["BACKGROUND"]["value"] == "#1E1E2E"
+assert metadata["license_status"] == "present_unverified"
+assert metadata["licenses"][0]["text"].startswith("MIT License")
+PY
+cp -- "$mocha_pack/source.json" "$CASE_DIR/mocha-metadata-before-collision"
+if "$cli" install "catppuccin/kitty@$FIXTURE_SHA" --theme themes/mocha.conf \
+    > "$CASE_DIR/install-repeat.log" 2>&1; then
+    printf 'Public installation collision unexpectedly succeeded\n' >&2
+    exit 1
+fi
+grep -q 'already installed' "$CASE_DIR/install-repeat.log"
+cmp "$mocha_pack/source.json" "$CASE_DIR/mocha-metadata-before-collision"
+"$cli" install owner/single > "$CASE_DIR/install-single.log"
+[[ -f "$CASE_DIR/checkout/themes/owner-single/source.json" ]]
+if "$cli" install owner/unsupported > "$CASE_DIR/install-unsupported.log" 2>&1; then
+    printf 'Unsupported public installation unexpectedly succeeded\n' >&2
+    exit 1
+fi
+[[ ! -e "$CASE_DIR/checkout/themes/owner-unsupported" ]]
+if FAIL_PUBLICATION=1 "$cli" install owner/failure > "$CASE_DIR/install-failed-publication.log" 2>&1; then
+    printf 'Injected publication failure unexpectedly succeeded\n' >&2
+    exit 1
+fi
+[[ ! -e "$CASE_DIR/checkout/themes/owner-failure" ]]
+"$cli" install owner/native > "$CASE_DIR/install-native.log"
+[[ -f "$CASE_DIR/checkout/themes/native-import-test/palette.conf" ]]
+[[ "$(< "$CASE_DIR/checkout/runtime/state/current_theme")" == xcalibur-test ]]
+sha256sum -c "$CASE_DIR/import-application-before" > /dev/null
+[[ -z "$(find "$CASE_DIR/tmp" -maxdepth 1 -name 'xcalibur-import.*' -print -quit)" ]]
 printf 'End-to-end isolated CLI workflow passed.\n'

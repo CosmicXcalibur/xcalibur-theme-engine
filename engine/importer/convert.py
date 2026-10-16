@@ -148,6 +148,22 @@ def source_metadata(report, theme_id):
             not isinstance(license_count, int) or license_count < len(license_paths) or license_count > 2000 or \
             any(not safe_relative(path) for path in license_paths):
         raise ValueError("invalid license file inventory")
+    if len(set(license_paths)) != len(license_paths) or len({item["path"] for item in clean}) != len(clean) or \
+            any(item["path"] not in license_paths for item in clean) or \
+            (license_count > 0 and not license_paths):
+        raise ValueError("inconsistent license file inventory")
+    license_text = "\n".join(item.get("text", "") for item in clean).lower()
+    if license_count == 0:
+        expected_status = "missing"
+    elif license_count > 1 or len(clean) != license_count or \
+            any(item["status"] != "captured" for item in clean):
+        expected_status = "ambiguous_or_incomplete"
+    elif any(term in license_text for term in ("all rights reserved", "non-commercial", "no redistribution")):
+        expected_status = "restrictive_terms_found"
+    else:
+        expected_status = "present_unverified"
+    if status != expected_status:
+        raise ValueError("license status conflicts with captured evidence")
     role_sources = report.get("role_sources", report.get("semantic_roles", {}))
     if not isinstance(role_sources, dict):
         raise ValueError("invalid role provenance")

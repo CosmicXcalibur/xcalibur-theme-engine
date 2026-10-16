@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-command_import() (
+command_import_source() (
     local mode="${1:-}" repository="${2:-}" output="${3:-}" staging="" revision report_file
     local source_kind=github source_dir="" retrieval_info="" source_ref="" pinned_revision="" slug
     local selector="" component
@@ -10,7 +10,8 @@ command_import() (
         theme_install_from_directory "$repository"
         return
     fi
-    if [[ "$mode" != analyze && "$mode" != preview && "$mode" != convert ]] ||
+    if [[ "$mode" != analyze && "$mode" != preview && "$mode" != convert &&
+          "$mode" != install-source ]] ||
        { [[ "$mode" == convert && "$#" -ne 3 && "$#" -ne 5 ]] ||
          [[ "$mode" != convert && "$#" -ne 2 && "$#" -ne 4 ]]; } ||
        { [[ "$mode" == convert && "$#" -eq 5 && "${4:-}" != --theme ]] ||
@@ -42,6 +43,11 @@ command_import() (
                 return 2
             fi
         done
+    fi
+    if [[ "$mode" == install-source &&
+          ( "$repository" == /* || "$repository" == ./* || "$repository" == ../* ) ]]; then
+        log_error "theme install requires a GitHub repository; use theme import install for a reviewed local pack."
+        return 2
     fi
     if [[ "$repository" == /* || "$repository" == ./* || "$repository" == ../* ]]; then
         source_kind=local
@@ -141,11 +147,61 @@ command_import() (
         log_error "Unable to analyze source: $2"
         return 1
     fi
-    if [[ "$mode" == preview ]]; then
+    if [[ "$mode" == install-source ]]; then
+        local candidate_count
+        if ! python3 "$ENGINE_DIR/importer/convert.py" preview "$report_file" "$THEMES_DIR" > "$staging/preview.txt"; then
+            log_error "Unable to preview retrieved theme: $2"
+            return 1
+        fi
+        candidate_count="$(python3 - "$report_file" <<'PY'
+import json
+import sys
+with open(sys.argv[1], encoding="utf-8") as source:
+    print(len(json.load(source)["theme_candidates"]))
+PY
+)" || return 1
+        if [[ ! "$candidate_count" =~ ^[0-9]+$ ]]; then
+            log_error "Invalid candidate count in analysis report."
+            return 1
+        fi
+        if [[ -z "$selector" && "$candidate_count" -gt 1 ]]; then
+            cat "$staging/preview.txt"
+            log_error "Multiple themes found. Retry with --theme <exact-relative-file> and the pinned source shown above."
+            return 2
+        fi
+        if [[ -z "$selector" && "$candidate_count" -eq 0 ]] &&
+           theme_install_root_file_validate "$source_dir/theme.conf" &&
+           theme_install_root_file_validate "$source_dir/palette.conf" &&
+           theme_manifest_load "$source_dir/theme.conf" "" &&
+           theme_definition_load "$source_dir/palette.conf" ""; then
+            log_info "Installing validated native pack from $repository@$revision."
+            sed -n '/^License status:/p' "$staging/preview.txt"
+            log_warn "Review upstream license terms before use or redistribution."
+            theme_install_from_directory "$source_dir"
+            return
+        fi
+        cat "$staging/preview.txt"
+        if ! python3 "$ENGINE_DIR/importer/convert.py" convert "$report_file" "$staging/converted"; then
+            log_error "Unable to convert source; review the preview and select a supported candidate."
+            return 1
+        fi
+        theme_install_from_directory "$staging/converted"
+    elif [[ "$mode" == preview ]]; then
         python3 "$ENGINE_DIR/importer/convert.py" preview "$report_file" "$THEMES_DIR"
     else
+        [[ "$output" != ./* ]] || output="${output#./}"
         [[ "$output" == /* ]] || output="$PWD/$output"
         python3 "$ENGINE_DIR/importer/convert.py" convert "$report_file" "$output" || return 1
         log_success "Validated converted theme pack: $output"
     fi
 )
+
+command_import() {
+    case "${1:-}" in
+        analyze|preview|convert|install) command_import_source "$@" ;;
+        *)
+            log_error "Usage: theme import analyze|preview <source> [--theme <relative-file>] | convert <source> <new-output-directory> [--theme <relative-file>] | install <pack-directory>"
+            return 2
+            ;;
+    esac
+}

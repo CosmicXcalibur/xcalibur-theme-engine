@@ -71,6 +71,10 @@ printf 'invalid id\n' > "$CURRENT_THEME_FILE"
 THEME_ROOT="$ROOT"
 expect_failure 'malformed status state' command_status
 rm -f -- "$CURRENT_THEME_FILE"
+printf 'xcalibur-test\n' > "$CURRENT_THEME_FILE"
+ln -s "$ROOT/themes/xcalibur-test" "$THEMES_DIR/xcalibur-test"
+expect_failure 'status rejects symlinked theme directory' command_status
+rm -- "$THEMES_DIR/xcalibur-test" "$CURRENT_THEME_FILE"
 saved_themes_dir="$THEMES_DIR"
 THEMES_DIR="$TEST_TMP/missing-themes"
 expect_failure 'missing themes directory' theme_list
@@ -394,52 +398,36 @@ export TMPDIR
 THEME_ROOT="$TEST_TMP/native-root"
 THEMES_DIR="$THEME_ROOT/themes"
 mkdir -p "$THEME_ROOT"
-python3() {
-    if [[ "$1" == */importer/retrieve.py ]]; then
-        mkdir -p "$3"
-        command cp "$TEST_TMP/native-fixture/"* "$3/"
-        printf '%040d\n' 0
-        return
-    fi
-    command python3 "$@"
-}
-timeout() { local duration="$1"; shift; "$@"; }
-theme_install install owner/repo
+theme_install_from_directory "$TEST_TMP/native-fixture"
 [[ -f "$THEMES_DIR/xcalibur-test/theme.conf" ]]
-expect_failure 'existing native theme' theme_install install owner/repo
+expect_failure 'existing native theme' theme_install_from_directory "$TEST_TMP/native-fixture"
 [[ -f "$THEMES_DIR/xcalibur-test/palette.conf" ]]
 cmp -s "$THEMES_DIR/xcalibur-test/palette.conf" "$TEST_TMP/native-fixture/palette.conf"
 mkdir -p "$TEST_TMP/outside-themes" "$TEST_TMP/native-link-root"
 ln -s "$TEST_TMP/outside-themes" "$TEST_TMP/native-link-root/themes"
 THEME_ROOT="$TEST_TMP/native-link-root"
 THEMES_DIR="$THEME_ROOT/themes"
-expect_failure 'symlinked themes directory' theme_install install owner/repo
+expect_failure 'symlinked themes directory' theme_install_from_directory "$TEST_TMP/native-fixture"
 [[ -z "$(find "$TEST_TMP/outside-themes" -mindepth 1 -print -quit)" ]]
 ln -s "$TEST_TMP/outside-themes" "$TEST_TMP/native-parent-link"
 THEME_ROOT="$TEST_TMP/native-parent-link"
 THEMES_DIR="$THEME_ROOT/themes"
-expect_failure 'symlinked parent of themes directory' theme_install install owner/repo
+expect_failure 'symlinked parent of themes directory' theme_install_from_directory "$TEST_TMP/native-fixture"
 [[ -z "$(find "$TEST_TMP/outside-themes" -mindepth 1 -print -quit)" ]]
 THEME_ROOT="$TEST_TMP/native-root"
 THEMES_DIR="$TEST_TMP/outside-themes"
-expect_failure 'themes directory outside engine root' theme_install install owner/repo
+expect_failure 'themes directory outside engine root' theme_install_from_directory "$TEST_TMP/native-fixture"
 THEME_ROOT="$TEST_TMP/native-failure-root"
 THEMES_DIR="$THEME_ROOT/themes"
 mkdir -p "$THEME_ROOT"
 python3() {
-    if [[ "$1" == */importer/retrieve.py ]]; then
-        mkdir -p "$3"
-        command cp "$TEST_TMP/native-fixture/"* "$3/"
-        return
-    fi
     if [[ "${2:-}" == install-pack ]]; then return 91; fi
     command python3 "$@"
 }
-expect_failure 'native publication failure leaves no pack' theme_install install owner/repo
+expect_failure 'native publication failure leaves no pack' theme_install_from_directory "$TEST_TMP/native-fixture"
 [[ ! -e "$THEMES_DIR/xcalibur-test" ]]
-[[ -z "$(find "$TMPDIR" -mindepth 1 -print -quit)" ]]
+[[ -z "$(find "$THEMES_DIR" -mindepth 1 -print -quit)" ]]
 unset -f python3
-unset -f timeout
 
 mkdir -p "$TEST_TMP/repo/dotfiles/kitty" "$TEST_TMP/repo/waybar"
 printf 'background #112233\nforeground #eeeeee\ncolor4 #778899\n' > "$TEST_TMP/repo/dotfiles/kitty/colors.conf"

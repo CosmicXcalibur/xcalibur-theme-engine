@@ -27,7 +27,7 @@ command_theme() {
             echo "    theme list"
             echo "    theme current"
             echo "    theme set <theme-id>"
-            echo "    theme install <owner/repo>"
+            echo "    theme install <owner/repo[@commit-sha]> [--theme <relative-file>]"
             return 2
             ;;
     esac

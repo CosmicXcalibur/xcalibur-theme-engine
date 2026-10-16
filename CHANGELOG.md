@@ -10,6 +10,7 @@ This project follows the Keep a Changelog format.
 
 ### Added
 
+- The public `theme install owner/repo` command now converts supported GitHub color themes, requires explicit selection for multiple candidates, and retains native root-pack installation.
 - Local directory and Git source import, license evidence, conversion provenance, raw ANSI preservation, and installation conflict preview.
 - Authoritative `make check` runner, CI workflow, Python unit tests, and failure propagation probe.
 - GitHub import preview, data-only conversion, explicit local installation, and Hyprlock color adapter.
@@ -17,6 +18,8 @@ This project follows the Keep a Changelog format.
 
 ### Changed
 
+- CSS import ignores commented and quoted declarations; license metadata validation checks that status matches captured evidence.
+- Import conversion and explicit installation accept `./relative` pack paths, and status rejects symlinked selected theme directories.
 - Application installation snapshots and restores known destinations on failures.
 - Wallpaper and theme state commits occur after application stages succeed.
 - CWAL generation uses isolated configuration and output, with a timeout.

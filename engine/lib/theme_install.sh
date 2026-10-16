@@ -23,6 +23,7 @@ theme_install_root_file_validate() {
 # Install only validated root data files from a local, reviewable pack.
 theme_install_from_directory() (
     local source_dir="$1" theme_id theme_dir=""
+    [[ "$source_dir" != ./* ]] || source_dir="${source_dir#./}"
     [[ "$source_dir" == /* ]] || source_dir="$PWD/$source_dir"
     if ! fs_directory_safe "$source_dir" false ||
        ! theme_install_root_file_validate "$source_dir/theme.conf" ||
@@ -66,64 +67,13 @@ theme_install_from_directory() (
     log_success "Theme installed: $theme_id"
 )
 
-theme_install() (
-    if [[ "$#" -ne 2 ]]; then
-        log_error "Usage: theme install <owner/repo>"
+theme_install() {
+    if [[ "$#" -ne 2 && "$#" -ne 4 ]] ||
+       { [[ "$#" -eq 4 ]] && [[ "$3" != --theme ]]; }; then
+        log_error "Usage: theme install <owner/repo[@commit-sha]> [--theme <relative-file>]"
         return 2
     fi
-
-    local repository="$2"
-    local staging_dir=""
-    local repository_dir=""
-    local manifest=""
-    local definition=""
-    local theme_id=""
-    local theme_dir=""
-
-    if ! theme_install_repo_validate "$repository"; then
-        log_error "Invalid GitHub repository reference: $repository"
-        return 2
-    fi
-
-    if ! cmd_exists python3 || ! cmd_exists timeout; then
-        log_error "Native GitHub installation requires python3 and timeout."
-        return 1
-    fi
-
-    fs_directory_safe "${TMPDIR:-/tmp}" false || {
-        log_error "Unsafe temporary directory: ${TMPDIR:-/tmp}"
-        return 1
-    }
-
-    if ! staging_dir="$(mktemp -d "${TMPDIR:-/tmp}/xcalibur-theme-install.XXXXXX")"; then
-        log_error "Unable to create temporary staging directory."
-        return 1
-    fi
-    theme_install_cleanup() {
-        local result=$?
-        trap - EXIT
-        if ! rm -rf -- "$staging_dir"; then
-            log_error "Unable to remove native installation staging directory: $staging_dir"
-            result=1
-        fi
-        exit "$result"
-    }
-    trap 'theme_install_cleanup' EXIT
-    trap 'exit 129' HUP
-    trap 'exit 130' INT
-    trap 'exit 143' TERM
-
-    repository_dir="$staging_dir/repository"
-    manifest="$repository_dir/theme.conf"
-    definition="$repository_dir/palette.conf"
-
-    if ! timeout 75s python3 "$ENGINE_DIR/importer/retrieve.py" "$repository" \
-        "$repository_dir" "$staging_dir/retrieval.json" >/dev/null; then
-        log_error "Unable to retrieve bounded GitHub repository: $repository"
-        return 1
-    fi
-
-    if ! theme_install_from_directory "$repository_dir"; then
-        return 1
-    fi
-)
+    # The import command owns retrieval and conversion. This public command
+    # requests installation of its validated result without applying a theme.
+    command_import_source install-source "${@:2}"
+}

@@ -4,7 +4,7 @@ Xcalibur is a Bash theme engine for Hyprland desktops. It changes a Hyprpaper wa
 
 ## Requirements and setup
 
-Run `engine/bin/theme` from this checkout. The CLI locates its repository from its own path. Bash, GNU coreutils, and standard shell tools are required. `wallpaper set` needs `cwal`, `hyprctl`, a running Hyprpaper session, and `timeout`. Import analysis, preview, conversion, and native GitHub pack installation need Python 3 and `timeout`; local Git revision detection also uses Git when available. Installing a converted pack needs Python 3 for native validation and atomic publication. Application commands are needed only when their enabled integration reloads a running application. `theme doctor` distinguishes workflow requirements from optional tools.
+Run `engine/bin/theme` from this checkout. The CLI locates its repository from its own path. Bash, GNU coreutils, and standard shell tools are required. `wallpaper set` needs `cwal`, `hyprctl`, a running Hyprpaper session, and `timeout`. GitHub installation and import analysis, preview, and conversion need Python 3 and `timeout`; local Git revision detection also uses Git when available. Installing a converted pack needs Python 3 for native validation and atomic publication. Application commands are needed only when their enabled integration reloads a running application. `theme doctor` distinguishes workflow requirements from optional tools.
 
 To install a copy under an existing user-writable prefix, run `python3 scripts/package.py install "$HOME/.local"`. This creates `$HOME/.local/share/xcalibur-theme-engine` and a `$HOME/.local/bin/theme` symlink, refusing collisions. If `$HOME/.local` does not exist, create it first. `python3 scripts/package.py uninstall "$HOME/.local"` removes that copy only when its manifest, files, and command symlink match; it refuses to erase edits, added files, or runtime data. Keep the checkout for development and run `make check` there. Package installation requires Python 3 and does not modify application styles or desktop settings.
 
@@ -22,7 +22,7 @@ theme doctor
 theme list
 theme current
 theme set <theme-id>
-theme install <owner/repo>
+theme install <owner/repo[@commit-sha]> [--theme <relative-file>]
 theme wallpaper help|list|current|random|set <file>
 theme palette generate
 theme render <module>
@@ -75,7 +75,7 @@ engine/bin/theme import convert ./local-theme /tmp/review-local-theme
 engine/bin/theme import install /tmp/review-local-theme
 ```
 
-Conversion requires unambiguous `BACKGROUND` and `FOREGROUND`. Preview prints a pinned reference to reuse for a later conversion. Conversion validates a private staged pack and publishes the whole directory with an exclusive Linux rename; explicit `import install` revalidates and publishes in the same way. Both refuse collisions. Analysis, preview, conversion, and installation never apply a theme; only a later `theme set <id>` does that. The license status is a review prompt, not permission to redistribute. Live GitHub retrieval has not been verified in the deterministic suite; local Git repositories and mocked HTTPS responses are used. See [importer documentation](docs/importer.md).
+Conversion requires unambiguous `BACKGROUND` and `FOREGROUND`. Preview prints a pinned reference to reuse for a later conversion. `theme install <owner/repo>` performs bounded retrieval, analysis, preview, conversion, validation, and explicit installation in one invocation. If several complete theme files are present it lists them and requires `--theme <exact-relative-file>`; it never chooses a variant silently. If there is no convertible candidate, it can install a valid native pack at the repository root as-is. It reports the pinned revision and refuses existing theme IDs. Conversion validates a private staged pack and publishes the whole directory with an exclusive Linux rename; explicit `import install` revalidates and publishes in the same way. Analysis, preview, conversion, and installation never apply a theme; only a later `theme set <id>` does that. The license status is a review prompt, not permission to redistribute. Live GitHub retrieval has not been verified in the deterministic suite; local Git repositories and mocked HTTPS responses are used. See [importer documentation](docs/importer.md).
 
 ## Security and limitations
 
